@@ -1,4 +1,6 @@
-# T_c CGCNN
+# Supercon
+
+[CGCNN](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.145301) + [Materials Project](https://materialsproject.org/) + [MixMatch](https://arxiv.org/abs/1905.02249) for searching superconductors
 
 ## Roadmap
 

@@ -1,5 +1,14 @@
+# logs
 *.log
-__pycache__
+runs
 
 # slurm output log files on CSD3
 *.out
+
+# cache
+data/structures
+data/cache
+__pycache__
+
+# package
+*egg-info
