@@ -8,7 +8,6 @@ runs
 
 # cache
 data/structures
-data/cache
 __pycache__
 
 # package
