@@ -1,20 +1,14 @@
 # %%
 from datetime import datetime
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import torch
-from sklearn.metrics import (
-    precision_recall_curve,
-    precision_score,
-    roc_auc_score,
-    roc_curve,
-)
 from sklearn.model_selection import train_test_split as split
 from torch.nn import CrossEntropyLoss, NLLLoss
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+from supercon.bench import benchmark
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
 
@@ -74,42 +68,4 @@ model.fit(
 
 
 # %%
-mp_ids, formulas, targets, preds = model.predict(test_loader)
-
-
-# %%
-df = pd.DataFrame(
-    [mp_ids, formulas, targets, *zip(*preds.softmax(1).numpy())],
-    index=["material_id", "formula", "target", "pred_0", "pred_1"],
-).T
-
-
-# %%
-df.plot.bar(x="formula", y=["pred_1", "target"])
-
-plt.savefig("cgcnn_val_preds.png", dpi=200)
-
-
-# %%
-fpr, tpr, threshold = roc_curve(targets, preds.argmax(1))
-roc_auc = roc_auc_score(targets, preds.argmax(1))
-
-
-plt.title("Receiver Operating Characteristic")
-plt.plot(fpr, tpr, "b", label=f"AUC = {roc_auc:.2f}")
-plt.legend(loc="lower right")
-plt.plot([0, 1], [0, 1], "r--")
-plt.ylabel("True Positive Rate")
-plt.xlabel("False Positive Rate")
-
-
-# %%
-precision, recall, threshold = precision_recall_curve(targets, preds.argmax(1))
-avg_prec = precision_score(targets, preds.argmax(1))
-
-
-plt.title("Precision Recall curve for positive label (1: superconductor)")
-plt.plot(precision, recall, "b", label=f"average precision = {avg_prec:.2f}")
-plt.legend(loc="lower left")
-plt.ylabel("Precision")
-plt.xlabel("Recall")
+benchmark(model, test_loader, model_dir)

@@ -1,8 +1,9 @@
 # logs
 *.log
 runs
+**/runs
 
-# slurm output log files on CSD3
+# slurm log files on CSD3
 *.out
 
 # cache
