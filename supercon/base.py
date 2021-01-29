@@ -198,36 +198,27 @@ class BaseModel(nn.Module, ABC):
     def predict(self, generator, verbose=False):
         """ Generate predictions """
 
-        test_ids = []
-        test_comp = []
-        test_targets = []
-        test_output = []
+        material_ids, formulas, targets, outputs = [], [], [], []
 
         # Ensure model is in evaluation mode
         self.eval()
-        model = self.swa["model"] if hasattr(self, "swa") else self
 
         # iterate over mini-batches
-        for input_, target, comps, ids in tqdm(generator, disable=not verbose):
-
-            # move tensors to device (GPU or CPU)
-            input_ = (t.to(self.device) for t in input_)
+        for features, targs, comps, ids in tqdm(generator, disable=not verbose):
 
             # compute output
-            output = model(*input_)
+            output = self(*features)
 
             # collect the model outputs
-            test_ids += ids
-            test_comp += comps
-            test_targets.append(target)
-            test_output.append(output)
+            material_ids += ids
+            formulas += comps
+            targets.append(targs)
+            outputs.append(output)
 
-        return (
-            test_ids,
-            test_comp,
-            torch.cat(test_targets, dim=0).view(-1).numpy(),
-            torch.cat(test_output, dim=0),
-        )
+        targets = torch.cat(targets, dim=0).cpu()
+        outputs = torch.cat(outputs, dim=0).cpu()
+
+        return material_ids, formulas, targets, outputs
 
     @abstractmethod
     def forward(self, *x):

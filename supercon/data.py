@@ -178,7 +178,7 @@ class GaussianDistance:
         return np.exp(-((distances[..., None] - self.filter) ** 2) / self.var ** 2)
 
 
-def collate_batch(dataset_list):
+def collate_batch(batch, use_cuda=False):
     """
     Collate a list of data and return a batch for predicting crystal
     properties.
@@ -199,49 +199,41 @@ def collate_batch(dataset_list):
     -------
     N = sum(n_i); N0 = sum(i)
 
-    batch_atom_fea: torch.Tensor shape (N, orig_atom_fea_len)
+    atom_feas: torch.Tensor shape (N, orig_atom_fea_len)
         Atom features from atom type
-    batch_nbr_fea: torch.Tensor shape (N, M, nbr_fea_len)
+    nbr_feas: torch.Tensor shape (N, M, nbr_fea_len)
         Bond features of each atom's M neighbors
-    batch_nbr_fea_idx: torch.LongTensor shape (N, M)
+    nbr_fea_idxs: torch.LongTensor shape (N, M)
         Indices of M neighbors of each atom
     crystal_atom_idx: list of torch.LongTensor of length N0
         Mapping from the crystal idx to atom idx
     target: torch.Tensor shape (N, 1)
         Target value for prediction
-    batch_cif_ids: list
+    cif_ids: list
     """
-    batch_atom_fea, batch_nbr_fea = [], []
-    batch_self_fea_idx, batch_nbr_fea_idx = [], []
-    crystal_atom_idx, batch_target = [], []
-    batch_comps = []
-    batch_cif_ids = []
+    batch_self_fea_idx, batch_nbr_fea_idxs, crystal_atom_idx = [], [], []
     base_idx = 0
-    for (i, data) in enumerate(dataset_list):
-        (atom_fea, nbr_fea, self_fea_idx, neighbor_fea_idx), target, comp, cif_id = data
+    features, targets, compositions, cif_ids = zip(*batch)
 
-        n_i = atom_fea.shape[0]  # number of atoms for this crystal
+    atom_feas, nbr_feas, self_fea_idxs, neighbor_fea_idxs = zip(*features)
+    for (idx, atom_fea) in enumerate(atom_feas):
 
-        batch_atom_fea.append(atom_fea)
-        batch_nbr_fea.append(nbr_fea)
-        batch_self_fea_idx.append(self_fea_idx + base_idx)
-        batch_nbr_fea_idx.append(neighbor_fea_idx + base_idx)
+        batch_self_fea_idx.append(self_fea_idxs[idx] + base_idx)
+        batch_nbr_fea_idxs.append(neighbor_fea_idxs[idx] + base_idx)
 
-        crystal_atom_idx.extend([i] * n_i)
-        batch_target.append(target)
-        batch_comps.append(comp)
-        batch_cif_ids.append(cif_id)
-        base_idx += n_i
+        n_atoms = atom_fea.shape[0]  # number of atoms for this crystal
+        crystal_atom_idx.extend([idx] * n_atoms)
+        base_idx += n_atoms
 
-    return (
-        (
-            torch.cat(batch_atom_fea, dim=0),
-            torch.cat(batch_nbr_fea, dim=0),
-            torch.cat(batch_self_fea_idx, dim=0),
-            torch.cat(batch_nbr_fea_idx, dim=0),
-            torch.LongTensor(crystal_atom_idx),
-        ),
-        torch.stack(batch_target, dim=0).squeeze(1),
-        batch_comps,
-        batch_cif_ids,
+    out_features = (
+        torch.cat(atom_feas, dim=0),
+        torch.cat(nbr_feas, dim=0),
+        torch.cat(batch_self_fea_idx, dim=0),
+        torch.cat(batch_nbr_fea_idxs, dim=0),
+        torch.LongTensor(crystal_atom_idx),
     )
+    targets = torch.cat(targets, dim=0)
+    if use_cuda:
+        out_features = [t.cuda() for t in out_features]
+        targets = targets.cuda()
+    return out_features, targets, compositions, cif_ids

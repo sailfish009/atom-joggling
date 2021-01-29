@@ -25,6 +25,7 @@ from supercon.mixup import (
 os.makedirs(args.out_dir, exist_ok=True)
 
 use_cuda = torch.cuda.is_available()
+print("use_cuda:", use_cuda)
 best_acc = 0  # best test accuracy
 torch.manual_seed(0)
 
@@ -42,7 +43,10 @@ labeled_set = CrystalGraphData(train_df, task)
 unlabeled_set = CrystalGraphData(unlabeled_df, task)
 test_set = CrystalGraphData(test_df, task)
 
-loader_args = {"batch_size": args.batch_size, "collate_fn": collate_batch}
+loader_args = {
+    "batch_size": args.batch_size,
+    "collate_fn": lambda batch: collate_batch(batch, use_cuda),
+}
 
 labeled_trainloader = DataLoader(
     labeled_set, shuffle=True, **loader_args, drop_last=True
@@ -56,6 +60,9 @@ test_loader = DataLoader(test_set, shuffle=False, **loader_args)
 elem_emb_len = labeled_set.elem_emb_len
 nbr_fea_len = labeled_set.nbr_fea_len
 model = CGCNN(task, robust, elem_emb_len, nbr_fea_len, n_targets=2)
+if use_cuda:
+    model.cuda()
+
 print(f"Total params: {model.n_params:,d}")
 
 # Train/test losses and optimizer
@@ -91,7 +98,6 @@ for epoch in range(start_epoch, args.epochs):
         optimizer,
         train_criterion,
         epoch,
-        use_cuda,
     )
     _, train_acc = validate(labeled_trainloader, model, criterion)
     test_loss, test_acc = validate(test_loader, model, criterion)
@@ -115,7 +121,10 @@ for epoch in range(start_epoch, args.epochs):
         },
         is_best,
     )
-    print(f"test_acc: {test_acc:.3g}")
+    print(
+        f"test_acc: {test_acc:<7.3g} train_acc: {train_acc:<7.3g} "
+        f"test_loss: {test_loss:<7.3g} train_loss: {train_loss:<7.3g}"
+    )
     test_accs.append(test_acc)
 writer.close()
 

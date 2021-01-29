@@ -1,7 +1,9 @@
 import argparse
+import sys
 
 import numpy as np
 import torch
+from tqdm import trange
 
 parser = argparse.ArgumentParser(description="PyTorch MixMatch Training")
 # Optimization options
@@ -25,7 +27,7 @@ parser.add_argument(
 parser.add_argument(
     "--lr",
     "--learning-rate",
-    default=0.002,
+    default=1e-3,
     type=float,
     metavar="LR",
     help="initial learning rate",
@@ -65,7 +67,6 @@ def train(
     optimizer,
     criterion,
     epoch,
-    use_cuda,
 ):
 
     losses = {"total": [], "loss_u": [], "loss_x": []}
@@ -74,7 +75,7 @@ def train(
     unlabeled_train_iter = iter(unlabeled_trainloader)
 
     model.train()
-    for batch_idx in range(args.train_iterations):
+    for batch_idx in trange(args.train_iterations, file=sys.stdout):
         try:
             inputs_x, targets_x, *_ = next(labeled_train_iter)
         except StopIteration:
@@ -91,10 +92,6 @@ def train(
 
         # Transform labels to one-hot
         targets_x = torch.nn.functional.one_hot(targets_x)
-
-        if use_cuda:
-            inputs_x, targets_x = inputs_x.cuda(), targets_x.cuda()
-            inputs_u = inputs_u.cuda()
 
         crys_fea_x = model.material_nn(*inputs_x)
         crys_fea_u = model.material_nn(*inputs_u)
@@ -161,6 +158,7 @@ def train(
     return [mean(x) for x in losses.values()]
 
 
+@torch.no_grad()
 def validate(val_loader, model, criterion):
 
     losses, avg_acc = [], []
@@ -168,16 +166,15 @@ def validate(val_loader, model, criterion):
     # switch to evaluate mode
     model.eval()
 
-    with torch.no_grad():
-        for inputs, targets, *_ in val_loader:
-            # compute output
-            outputs = model(*inputs)
-            loss = criterion(outputs, targets)
+    for inputs, targets, *_ in val_loader:
+        # compute output
+        outputs = model(*inputs)
+        loss = criterion(outputs, targets)
 
-            # measure accuracy and record loss
-            acc = (outputs.argmax(1) == targets).float().mean()
-            losses.append(loss.item())
-            avg_acc.append(acc.item())
+        # measure accuracy and record loss
+        acc = (outputs.argmax(1) == targets).float().mean()
+        losses.append(loss.item())
+        avg_acc.append(acc.item())
 
     return mean(losses), mean(avg_acc)
 
@@ -194,7 +191,7 @@ def save_checkpoint(state, is_best, checkpoint=args.out_dir, filename="/checkpoi
 
 def linear_rampup(current, rampup_length=args.epochs):
     """Linearly ramps up the unlabeled loss with epoch count. As the
-    pseudo-labels become more accurate, they should be weighted more.
+    pseudo-labels become more accurate, they can be be weighted more.
 
     Args:
         current (float): current loss weighting factor
