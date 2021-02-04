@@ -10,7 +10,7 @@ from torch_scatter.scatter import scatter_mean
 class ConvLayer(nn.Module):
     """ Convolutional operation on graphs """
 
-    def __init__(self, elem_fea_len, nbr_fea_len):
+    def __init__(self, elem_fea_len: int, nbr_fea_len: int) -> None:
         """
         Args:
             elem_fea_len (int): Number of atom hidden features
@@ -25,7 +25,7 @@ class ConvLayer(nn.Module):
         self.bn1 = nn.BatchNorm1d(2 * self.elem_fea_len)
         self.bn2 = nn.BatchNorm1d(self.elem_fea_len)
 
-    def forward(self, atom_in_fea, nbr_fea, self_fea_idx, nbr_fea_idx):
+    def forward(self, atom_in_fea, nbr_fea, self_fea_idx, nbr_fea_idx: List[int]):
         """
         Forward pass
 
@@ -78,7 +78,13 @@ class DescriptorNet(nn.Module):
     CrystalGraphConvNet Model.
     """
 
-    def __init__(self, elem_emb_len, nbr_fea_len, elem_fea_len=64, n_graph=4):
+    def __init__(
+        self,
+        elem_emb_len: int,
+        nbr_fea_len: int,
+        elem_fea_len: int = 64,
+        n_graph: int = 4,
+    ) -> None:
         super().__init__()
 
         self.embedding = nn.Linear(elem_emb_len, elem_fea_len)
@@ -132,7 +138,7 @@ class SimpleNet(nn.Module):
 
     def __init__(
         self, dims: List[int], activation=nn.LeakyReLU, batchnorm: bool = False
-    ):
+    ) -> None:
         super().__init__()
         output_dim = dims.pop()
 

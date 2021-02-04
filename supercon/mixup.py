@@ -23,7 +23,7 @@ parser.add_argument(
     help="manual epoch number (useful on restarts)",
 )
 parser.add_argument(
-    "--batch-size", default=64, type=int, metavar="N", help="train batchsize"
+    "--batch-size", default=32, type=int, metavar="N", help="train batchsize"
 )
 parser.add_argument(
     "--lr",
@@ -42,8 +42,9 @@ parser.add_argument(
     help="path to latest checkpoint (default: none)",
 )
 # Method options
+# mixmatch used a default of 1024 but CIFAR10 is a way bigger dataset so 128 seems good
 parser.add_argument(
-    "--train-iterations", type=int, default=10, help="Number of batches per epoch"
+    "--train-iterations", type=int, default=128, help="Number of batches per epoch"
 )
 parser.add_argument(
     "--out-dir", default="runs/mixup", help="Directory to output the result"
@@ -66,32 +67,38 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 
-def train(
-    labeled_trainloader,
-    unlabeled_trainloader,
-    model,
-    optimizer,
-    criterion,
-    epoch,
-):
+def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tuple:
+    """Train a model with mixup by randomly sampling linear combinations of
+    unlabeled and unlabeled inputs as well as targets. Uses model-generated
+    pseudo-labels to compute interpolated targets.
 
+    Args:
+        labeled_loader (torch.utils.data.DataLoader): labeled data
+        unlabeled_loader (torch.utils.data.DataLoader): unlabeled data
+        model (nn.Module): the instantiated model
+        optimizer (torch.optim): optimizer
+        criterion: loss function that computes total, labeled and unlabeled losses
+
+    Returns:
+        [loss, Lx, Lu]: 3-tuple of total, labeled and unlabeled losses
+    """
     losses = {"total": [], "loss_u": [], "loss_x": []}
 
-    labeled_train_iter = iter(labeled_trainloader)
-    unlabeled_train_iter = iter(unlabeled_trainloader)
+    labeled_train_iter = iter(labeled_loader)
+    unlabeled_train_iter = iter(unlabeled_loader)
 
     model.train()
     for batch_idx in trange(args.train_iterations, file=sys.stdout):
         try:
             inputs_x, targets_x, *_ = next(labeled_train_iter)
         except StopIteration:
-            labeled_train_iter = iter(labeled_trainloader)
+            labeled_train_iter = iter(labeled_loader)
             inputs_x, targets_x, *_ = next(labeled_train_iter)
 
         try:
             inputs_u, *_ = next(unlabeled_train_iter)
         except StopIteration:
-            unlabeled_train_iter = iter(unlabeled_trainloader)
+            unlabeled_train_iter = iter(unlabeled_loader)
             inputs_u, *_ = next(unlabeled_train_iter)
 
         batch_size = targets_x.size(0)
@@ -142,11 +149,7 @@ def train(
         logits_u = torch.cat(logits[1:], dim=0)
 
         Lx, Lu, w = criterion(
-            logits_x,
-            mixed_target[:batch_size],
-            logits_u,
-            mixed_target[batch_size:],
-            epoch + batch_idx / args.train_iterations,
+            logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:]
         )
 
         loss = Lx + w * Lu
@@ -161,11 +164,12 @@ def train(
         loss.backward()
         optimizer.step()
 
-    return [mean(x) for x in losses.values()]
+    # dicts are insertion ordered as of Python 3.6
+    return (mean(x) for x in losses.values())
 
 
 @torch.no_grad()
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion) -> tuple:
 
     losses, avg_acc = [], []
 
@@ -185,17 +189,17 @@ def validate(val_loader, model, criterion):
     return mean(losses), mean(avg_acc)
 
 
-def mean(lst):
+def mean(lst: list) -> float:
     return sum(lst) / len(lst)
 
 
-def save_checkpoint(state, is_best, path):
+def save_checkpoint(state: dict, is_best: bool, path: str) -> None:
     torch.save(state, path + "/checkpoint")
     if is_best:
         torch.save(state, path + "/best_model")
 
 
-def linear_rampup(current, rampup_length=args.epochs):
+def linear_rampup(current: int, rampup_length: int) -> float:
     """Linearly ramps up the unlabeled loss with epoch count. As the
     pseudo-labels become more accurate, they can be be weighted more.
 
@@ -205,7 +209,7 @@ def linear_rampup(current, rampup_length=args.epochs):
             Defaults to args.epochs.
 
     Returns:
-        [type]: [description]
+        float: increasing weighting factor for the unlabeled loss
     """
     if rampup_length == 0:
         return 1.0
@@ -216,29 +220,45 @@ def linear_rampup(current, rampup_length=args.epochs):
 
 
 class SemiLoss:
-    def __call__(self, preds_x, targets_x, preds_u, targets_u, epoch):
+    def __init__(self, u_ramp_length: int, ramp_start: int = 0) -> None:
+        self.u_ramp_length = u_ramp_length
+        self.ramp_count = ramp_start
+
+    def __call__(self, preds_x, targets_x, preds_u, targets_u) -> tuple:
+        self.ramp_count += 1
         probs_u = preds_u.softmax(dim=1)
 
         Lx = -(preds_x.log_softmax(dim=1) * targets_x).sum(dim=1).mean()
         Lu = (probs_u - targets_u).pow(2).mean()  # MSE
 
-        return Lx, Lu, args.lambda_u * linear_rampup(epoch)
+        ramp = linear_rampup(self.ramp_count, self.u_ramp_length)
+        return Lx, Lu, args.lambda_u * ramp
 
 
-def interleave_offsets(batch, nu):
-    groups = [batch // (nu + 1)] * (nu + 1)
-    for x in range(batch - sum(groups)):
+def interleave_offsets(batch_size: int, nu: int) -> list:
+    groups = [batch_size // (nu + 1)] * (nu + 1)
+    for x in range(batch_size - sum(groups)):
         groups[-x - 1] += 1
     offsets = [0]
     for g in groups:
         offsets.append(offsets[-1] + g)
-    assert offsets[-1] == batch
+    assert offsets[-1] == batch_size
     return offsets
 
 
-def interleave(xy, batch):
+def interleave(xy: list, batch_size: int) -> list:
+    """Interleave labeled and unlabeled samples between batches to
+    get correct batch normalization calculation.
+
+    Args:
+        xy (tuple): list of inputs or targets split by batch size
+        batch_size (int): batch size
+
+    Returns:
+        [list]: list of interleaved inputs or targets
+    """
     nu = len(xy) - 1
-    offsets = interleave_offsets(batch, nu)
+    offsets = interleave_offsets(batch_size, nu)
     xy = [[v[offsets[p] : offsets[p + 1]] for p in range(nu + 1)] for v in xy]
     for i in range(1, nu + 1):
         xy[0][i], xy[i][i] = xy[i][i], xy[0][i]

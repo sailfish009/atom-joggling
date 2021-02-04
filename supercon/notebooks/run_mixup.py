@@ -25,7 +25,6 @@ from supercon.mixup import (
 os.makedirs(args.out_dir, exist_ok=True)
 
 use_cuda = torch.cuda.is_available()
-print("use_cuda:", use_cuda)
 best_acc = 0  # best test accuracy
 torch.manual_seed(0)
 
@@ -48,10 +47,8 @@ loader_args = {
     "collate_fn": lambda batch: collate_batch(batch, use_cuda),
 }
 
-labeled_trainloader = DataLoader(
-    labeled_set, shuffle=True, **loader_args, drop_last=True
-)
-unlabeled_trainloader = DataLoader(
+labeled_loader = DataLoader(labeled_set, shuffle=True, **loader_args, drop_last=True)
+unlabeled_loader = DataLoader(
     unlabeled_set, shuffle=True, **loader_args, drop_last=True
 )
 test_loader = DataLoader(test_set, shuffle=False, **loader_args)
@@ -63,10 +60,18 @@ model = CGCNN(task, robust, elem_emb_len, nbr_fea_len, n_targets=2)
 if use_cuda:
     model.cuda()
 
-print(f"Total params: {model.n_params:,d}")
+print(f"- Task: {task}")
+print(f"- Using CUDA: {use_cuda}")
+print(f"- Total params: {model.n_params:,d}")
+print(f"- Labeled samples: {len(labeled_set):,d}")
+print(f"- Unlabeled samples: {len(unlabeled_set):,d}")
+print(f"- Test samples: {len(test_set):,d}")
+print(f"- Batch size: {args.batch_size:,d}")
+print(f"- Train iterations per epoch: {args.train_iterations:,d}")
+print(f"- Output directory: {args.out_dir:}")
 
 # Train/test losses and optimizer
-train_criterion = SemiLoss()
+train_criterion = SemiLoss(u_ramp_length=3)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 start_epoch = 0
@@ -92,14 +97,9 @@ for epoch in range(start_epoch, args.epochs):
     print(f"\nEpoch: {epoch + 1}/{args.epochs}")
 
     train_loss, train_loss_x, train_loss_u = train(
-        labeled_trainloader,
-        unlabeled_trainloader,
-        model,
-        optimizer,
-        train_criterion,
-        epoch,
+        labeled_loader, unlabeled_loader, model, optimizer, train_criterion
     )
-    _, train_acc = validate(labeled_trainloader, model, criterion)
+    _, train_acc = validate(labeled_loader, model, criterion)
     test_loss, test_acc = validate(test_loader, model, criterion)
 
     writer.add_scalar("losses/train_loss", train_loss, epoch)
@@ -131,5 +131,3 @@ print(f"Mean acc: {mean(test_accs[-20:]):.3g}")
 
 # %%
 benchmark(model, test_loader, args.out_dir)
-
-# %%
