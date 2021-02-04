@@ -28,21 +28,20 @@ class CGCNN(BaseModel):
         **kwargs,
     ):
         """
-        Parameters
-        ----------
-
-        elem_fea_len: int
-            Number of atom features in the input.
-        nbr_fea_len: int
-            Number of bond features.
-        elem_fea_len: int
-            Number of hidden atom features in the convolutional layers
-        n_graph: int
-            Number of convolutional layers
-        h_fea_len: int
-            Number of hidden features after pooling
-        n_hidden: int
-            Number of hidden layers after pooling
+        Args:
+            task (str): regression or classification
+            robust (bool): whether to use a robust loss function with self-attenuation
+            elem_emb_len (int): Length of embedding vectors used to describe elements.
+                Projected onto elem_fea_len dimensions by a linear layer of the model.
+            nbr_fea_len (int): length of the feature vector used to describe vertices
+            n_targets (int): number of regression or classification targets
+            elem_fea_len (int, optional): Number of hidden atom features in the
+                convolutional layers. Defaults to 64.
+            n_graph (int, optional): Number of convolutional layers. Defaults to 4.
+            h_fea_len (int, optional): Number of hidden features after pooling.
+                Defaults to 128.
+            n_hidden (int, optional): Number of hidden layers after pooling.
+                Defaults to 1.
         """
         super().__init__(task=task, robust=robust, **kwargs)
 

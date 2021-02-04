@@ -111,16 +111,14 @@ for epoch in range(start_epoch, args.epochs):
     # save model
     is_best = test_acc > best_acc
     best_acc = max(test_acc, best_acc)
-    save_checkpoint(
-        {
-            "epoch": epoch + 1,
-            "state_dict": model.state_dict(),
-            "acc": test_acc,
-            "best_acc": best_acc,
-            "optimizer": optimizer.state_dict(),
-        },
-        is_best,
-    )
+    state = {
+        "epoch": epoch + 1,
+        "state_dict": model.state_dict(),
+        "acc": test_acc,
+        "best_acc": best_acc,
+        "optimizer": optimizer.state_dict(),
+    }
+    save_checkpoint(state, is_best, args.out_dir)
     print(
         f"test_acc: {test_acc:<7.3g} train_acc: {train_acc:<7.3g} "
         f"test_loss: {test_loss:<7.3g} train_loss: {train_loss:<7.3g}"

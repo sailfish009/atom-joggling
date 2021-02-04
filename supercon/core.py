@@ -6,7 +6,7 @@ from torch.nn.functional import softmax
 
 
 class Normalizer:
-    """Normalize a Tensor and restore it later."""
+    """Normalize a tensor and restore it later."""
 
     def __init__(self):
         self.mean = None
@@ -64,16 +64,6 @@ class Featurizer:
         for key, value in embedding.items():
             instance._embedding[key] = np.array(value, dtype=float)
         return instance
-
-
-def save_checkpoint(state, is_best, model_dir):
-    """
-    Saves a checkpoint and overwrites the best model when is_best==True.
-    """
-    torch.save(state, f"{model_dir}/checkpoint.pth.tar")
-
-    if is_best:
-        torch.save(state, f"{model_dir}/best.pth.tar")
 
 
 def RobustL1Loss(output, log_std, target):

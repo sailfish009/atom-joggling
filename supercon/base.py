@@ -8,7 +8,8 @@ from torch import nn
 from torch.nn.functional import softmax
 from tqdm import tqdm
 
-from supercon.core import sampled_softmax, save_checkpoint
+from supercon.core import sampled_softmax
+from supercon.mixup import save_checkpoint
 
 
 class BaseModel(nn.Module, ABC):

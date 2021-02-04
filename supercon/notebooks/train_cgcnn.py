@@ -13,7 +13,7 @@ from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
 
 # %%
-model_dir = f"{ROOT}/runs/mixmatch"
+model_dir = f"{ROOT}/runs/cgcnn"
 task = "classification"
 
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
@@ -49,7 +49,13 @@ test_loader = DataLoader(test_set, collate_fn=collate_batch, batch_size=batch_si
 
 
 now = f"{datetime.now():%d-%m-%Y_%H-%M-%S}"
-writer = SummaryWriter(f"{model_dir}/runs/{now}")
+writer = SummaryWriter(f"{model_dir}/{now}")
+
+
+# %% sanity check: test untrained model performance
+material_ids, formulas, targets, outputs = model.predict(test_loader)
+untrained_acc = (targets == outputs.argmax(1)).float().mean()
+print(f"untrained accuracy: {untrained_acc:.3f}")
 
 
 # %%

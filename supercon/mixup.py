@@ -1,5 +1,6 @@
 import argparse
 import sys
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -44,7 +45,9 @@ parser.add_argument(
 parser.add_argument(
     "--train-iterations", type=int, default=10, help="Number of batches per epoch"
 )
-parser.add_argument("--out-dir", default="runs", help="Directory to output the result")
+parser.add_argument(
+    "--out-dir", default="runs/mixup", help="Directory to output the result"
+)
 # Mixup parameter of the Beta distribution
 parser.add_argument("--alpha", default=0.75, type=float)
 # weighting factor for the unlabeled loss term
@@ -55,6 +58,9 @@ parser.add_argument("--T", default=0.5, type=float)
 
 args, _ = parser.parse_known_args()
 
+# add time stamp if no custom out_dir was specified
+if not args.resume and args.out_dir == "runs/mixup":
+    args.out_dir += f"{datetime.now():%d-%m-%Y_%H-%M-%S}"
 
 np.random.seed(0)
 torch.manual_seed(0)
@@ -183,10 +189,10 @@ def mean(lst):
     return sum(lst) / len(lst)
 
 
-def save_checkpoint(state, is_best, checkpoint=args.out_dir, filename="/checkpoint"):
-    torch.save(state, checkpoint + filename)
+def save_checkpoint(state, is_best, path):
+    torch.save(state, path + "/checkpoint")
     if is_best:
-        torch.save(state, checkpoint + "/best_model")
+        torch.save(state, path + "/best_model")
 
 
 def linear_rampup(current, rampup_length=args.epochs):
