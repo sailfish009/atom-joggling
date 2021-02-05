@@ -26,6 +26,13 @@ parser.add_argument(
     "--batch-size", default=32, type=int, metavar="N", help="train batchsize"
 )
 parser.add_argument(
+    "--bootstrap-idx",
+    default=0,
+    type=int,
+    metavar="I",
+    help="index of sample to leave out of training set",
+)
+parser.add_argument(
     "--lr",
     "--learning-rate",
     default=1e-3,
@@ -148,11 +155,11 @@ def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tupl
         logits_x = logits[0]
         logits_u = torch.cat(logits[1:], dim=0)
 
-        Lx, Lu, w = criterion(
+        Lx, Lu, u_ramp = criterion(
             logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:]
         )
 
-        loss = Lx + w * Lu
+        loss = Lx + u_ramp * Lu
 
         # record loss
         losses["total"].append(loss.item())
@@ -165,7 +172,8 @@ def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tupl
         optimizer.step()
 
     # dicts are insertion ordered as of Python 3.6
-    return (mean(x) for x in losses.values())
+    losses = (mean(x) for x in losses.values())
+    return (*losses, u_ramp)
 
 
 @torch.no_grad()
