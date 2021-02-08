@@ -1,8 +1,7 @@
 import gzip
-import os
 import pickle
 from functools import lru_cache
-from os.path import abspath, dirname
+from os.path import abspath, dirname, exists
 
 import numpy as np
 import torch
@@ -44,8 +43,8 @@ class CrystalGraphData(Dataset):
                 Defaults to 0.2.
         """
 
-        assert os.path.exists(fea_path), f"fea_path={fea_path} does not exist!"
-        assert os.path.exists(struct_path), f"struct_path={struct_path} does not exist!"
+        assert exists(fea_path), f"fea_path='{fea_path}' does not exist!"
+        assert exists(struct_path), f"struct_path='{struct_path}' does not exist!"
 
         self.df = df
         self.struct_path = struct_path
@@ -55,7 +54,7 @@ class CrystalGraphData(Dataset):
         self.max_num_nbr = max_num_nbr
         self.radius = radius
 
-        self.gdf = GaussianDistance(dmin=dmin, dmax=self.radius, step=step)
+        self.gdf = GaussianDistance(dmin=dmin, dmax=radius, step=step)
         self.nbr_fea_len = self.gdf.embedding_size
 
         self.task = task
@@ -124,56 +123,37 @@ class CrystalGraphData(Dataset):
         elif self.task == "classification":
             target = torch.LongTensor([target])
 
-        return (
-            (atom_fea, nbr_fea, self_fea_idx, neighbor_fea_idx),
-            target,
-            formula,
-            material_id,
-        )
+        features = (atom_fea, nbr_fea, self_fea_idx, neighbor_fea_idx)
+
+        return features, target, formula, material_id
 
 
 class GaussianDistance:
-    """
-    Expands the distance by Gaussian basis.
-
-    Unit: angstrom
-    """
+    """ Expands distances by a Gaussian basis. (unit: angstrom) """
 
     def __init__(self, dmin, dmax, step, var=None):
         """
-        Parameters
-        ----------
-
-        dmin: float
-            Minimum interatomic distance
-        dmax: float
-            Maximum interatomic distance
-        step: float
-            Step size for the Gaussian filter
+        Args:
+            dmin (float): Minimum interatomic distance
+            dmax (float): Maximum interatomic distance
+            step (float): Step size for the Gaussian filter
+            var (float, optional): variance of the Gaussian filter. Defaults to step.
         """
         assert dmin < dmax
         assert dmax - dmin > step
         self.filter = np.arange(dmin, dmax + step, step)
         self.embedding_size = len(self.filter)
-        if var is None:
-            var = step
-        self.var = var
+        self.var = var or step
 
     def expand(self, distances):
-        """
-        Apply Gaussian distance filter to a numpy distance array
+        """Apply Gaussian distance filter to a numpy distance array.
 
-        Parameters
-        ----------
+        Args:
+            distances (np.array): an n-dim. distance matrix of any shape
 
-        distance: np.array shape n-d array
-            A distance matrix of any shape
-
-        Returns
-        -------
-        expanded_distance: shape (n+1)-d array
-            Expanded distance matrix with the last dimension of length
-            len(self.filter)
+        Returns:
+            np.array: an (n+1)-dim. expanded distance matrix with the last
+            dimension of length len(self.filter)
         """
         return np.exp(-((distances[..., None] - self.filter) ** 2) / self.var ** 2)
 

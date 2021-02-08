@@ -15,7 +15,7 @@ from supercon.mixup import save_checkpoint
 class BaseModel(nn.Module, ABC):
     """ A base class for regression and classification models. """
 
-    def __init__(self, task, robust, device=None, epoch=1):
+    def __init__(self, task, robust, device=None, epoch=1, checkpoint_dir=None):
         super().__init__()
         self.task = task
         self.robust = robust
@@ -24,6 +24,7 @@ class BaseModel(nn.Module, ABC):
         self.best_val_score = None
         self.val_score_name = "MAE" if task == "regression" else "Acc"
         self.model_params = {}
+        self.checkpoint_dir = checkpoint_dir
 
     @property
     def n_params(self, trainable=True):
@@ -34,13 +35,11 @@ class BaseModel(nn.Module, ABC):
         train_loader,
         val_loader,
         optimizer,
-        scheduler,
         epochs,
         criterion,
-        normalizer,
-        model_dir,
-        checkpoint=True,
         writer=None,
+        normalizer=None,
+        checkpoint=True,
         verbose=True,
     ):
         start_epoch = self.epoch
@@ -94,21 +93,20 @@ class BaseModel(nn.Module, ABC):
                     "best_val_score": self.best_val_score,
                     "val_score_name": self.val_score_name,
                     "optimizer": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict(),
                 }
 
-                if self.task == "regression":
+                if normalizer is not None:
                     checkpoint_dict["normalizer"] = normalizer.state_dict()
 
                 if hasattr(self, "swa"):
                     checkpoint_dict["swa"] = self.swa.copy()
-                    for key in ["model", "scheduler"]:
+                    for key in ["model", "scheduler"]:  # refers to SWA scheduler
                         # remove model as it can't and needs not be serialized
                         del checkpoint_dict["swa"][key]
                         state_dict = self.swa[key].state_dict()
                         checkpoint_dict["swa"][f"{key}_state_dict"] = state_dict
 
-                save_checkpoint(checkpoint_dict, is_best, model_dir)
+                save_checkpoint(checkpoint_dict, is_best, self.checkpoint_dir)
 
             if writer is not None:
                 for metric, val in train_metrics.items():
@@ -121,8 +119,6 @@ class BaseModel(nn.Module, ABC):
             if hasattr(self, "swa") and epoch > self.swa["start"]:
                 self.swa["model"].update_parameters(self)
                 self.swa["scheduler"].step()
-            else:
-                scheduler.step()
 
             # catch memory leak
             gc.collect()
@@ -146,15 +142,11 @@ class BaseModel(nn.Module, ABC):
         # we do not need batch_comp or batch_ids when training
         for input_, target, *_ in tqdm(loader, disable=not verbose, file=sys.stdout):
 
-            # move tensors to GPU
-            input_ = (tensor.to(self.device) for tensor in input_)
-
             # compute output
             output = self(*input_)
 
             if self.task == "regression":
                 target_norm = normalizer.norm(target)
-                target_norm = target_norm.to(self.device)
                 if self.robust:
                     mean, log_std = output.chunk(2, dim=1)
                     loss = criterion(mean, log_std, target_norm)
@@ -168,7 +160,6 @@ class BaseModel(nn.Module, ABC):
                 metrics["rmse"] += [(pred - target).pow(2).mean().sqrt()]
 
             else:  # classification
-                target = target.to(self.device).squeeze()
                 if self.robust:
                     output, log_std = output.chunk(2, dim=1)
                     logits = sampled_softmax(output, log_std)

@@ -10,13 +10,14 @@ from sklearn.metrics import (
 
 def benchmark(model, test_loader, out_dir=None):
     mp_ids, formulas, targets, preds = model.predict(test_loader)
+    preds = preds.softmax(1).numpy()
 
     df = pd.DataFrame(
-        [mp_ids, formulas, targets, *zip(*preds.softmax(1).numpy())],
-        index=["material_id", "formula", "target", "pred_0", "pred_1"],
+        [mp_ids, formulas, targets, *zip(*preds), preds.argmax(-1)],
+        index=["material_id", "formula", "target", "softmax_0", "softmax_1", "pred"],
     ).T
 
-    df.plot.bar(x="formula", y=["pred_1", "target"])
+    df.plot.bar(x="formula", y=["softmax_1", "target"])
     if out_dir:
         plt.savefig(out_dir + "/cgcnn_val_preds.png", dpi=200)
     plt.show()
@@ -41,3 +42,5 @@ def benchmark(model, test_loader, out_dir=None):
     plt.ylabel("Precision")
     plt.xlabel("Recall")
     plt.show()
+
+    return df, roc_auc, avg_prec
