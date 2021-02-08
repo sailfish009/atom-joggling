@@ -6,12 +6,9 @@ import torch
 
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
+from supercon.mixup import args
 
 # %%
-torch.manual_seed(0)
-
-# Data
-robust = False
 task = "classification"
 
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
@@ -22,7 +19,7 @@ labeled_set = CrystalGraphData(labeled_df, task)
 # Model
 elem_emb_len = labeled_set.elem_emb_len
 nbr_fea_len = labeled_set.nbr_fea_len
-model = CGCNN(task, robust, elem_emb_len, nbr_fea_len, n_targets=2)
+model = CGCNN(task, args.robust, elem_emb_len, nbr_fea_len, n_targets=2)
 
 id_to_idx_map = {val: key for key, val in labeled_df.material_id.to_dict().items()}
 

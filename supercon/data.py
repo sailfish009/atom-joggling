@@ -1,4 +1,5 @@
 import gzip
+import json
 import pickle
 from functools import lru_cache
 from os.path import abspath, dirname, exists
@@ -6,8 +7,6 @@ from os.path import abspath, dirname, exists
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
-from supercon.core import Featurizer
 
 # absolute path to the project's root directory
 ROOT = dirname(dirname(abspath(__file__)))
@@ -217,3 +216,36 @@ def collate_batch(batch, use_cuda=False):
         out_features = [t.cuda() for t in out_features]
         targets = targets.cuda()
     return out_features, targets, compositions, cif_ids
+
+
+class Featurizer:
+    """Base class for featurizing nodes and edges."""
+
+    def __init__(self, allowed_types):
+        self.allowed_types = set(allowed_types)
+        self._embedding = {}
+
+    def get_fea(self, key):
+        assert key in self.allowed_types, f"{key} is not an allowed atom type"
+        return self._embedding[key]
+
+    def load_state_dict(self, state_dict):
+        self._embedding = state_dict
+        self.allowed_types = set(self._embedding.keys())
+
+    def get_state_dict(self):
+        return self._embedding
+
+    @property
+    def embedding_size(self):
+        return len(self._embedding[list(self._embedding.keys())[0]])
+
+    @classmethod
+    def from_json(cls, embedding_file):
+        with open(embedding_file) as file:
+            embedding = json.load(file)
+        allowed_types = set(embedding.keys())
+        instance = cls(allowed_types)
+        for key, value in embedding.items():
+            instance._embedding[key] = np.array(value, dtype=float)
+        return instance

@@ -6,10 +6,9 @@ import torch
 from sklearn.metrics import f1_score
 from torch import nn
 from torch.nn.functional import softmax
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
-from supercon.core import sampled_softmax
-from supercon.mixup import save_checkpoint
+from supercon.utils import save_checkpoint
 
 
 class BaseModel(nn.Module, ABC):
@@ -43,10 +42,13 @@ class BaseModel(nn.Module, ABC):
         verbose=True,
     ):
         start_epoch = self.epoch
-        for epoch in range(start_epoch, start_epoch + epochs):
+        for epoch in trange(
+            start_epoch, start_epoch + epochs, desc="Epochs: ", disable=verbose
+        ):
             self.epoch += 1
             # Training
-            print(f"\nEpoch: [{epoch}/{start_epoch + epochs - 1}]", flush=True)
+            if verbose:
+                print(f"\nEpoch: [{epoch}/{start_epoch + epochs - 1}]", flush=True)
             train_metrics = self.evaluate(
                 train_loader, criterion, optimizer, normalizer, "train", verbose
             )
@@ -219,3 +221,63 @@ class BaseModel(nn.Module, ABC):
         model class.
         """
         raise NotImplementedError("forward() is not defined!")
+
+
+class Normalizer:
+    """Normalize a tensor and restore it later."""
+
+    def __init__(self):
+        self.mean = None
+        self.std = None
+
+    def fit(self, tensor, dim=0, keepdim=False):
+        """tensor is taken as a sample to calculate the mean and std"""
+        self.mean = tensor.mean(dim, keepdim)
+        self.std = tensor.std(dim, keepdim)
+
+    def norm(self, tensor):
+        assert [self.mean, self.std] != [None, None], "Normalizer must be fit first"
+        return (tensor - self.mean) / self.std
+
+    def denorm(self, normed_tensor):
+        assert [self.mean, self.std] != [None, None], "Normalizer must be fit first"
+        return normed_tensor * self.std + self.mean
+
+    def state_dict(self):
+        return {"mean": self.mean, "std": self.std}
+
+    def load_state_dict(self, state_dict):
+        self.mean = state_dict["mean"].cpu()
+        self.std = state_dict["std"].cpu()
+
+
+def RobustL1Loss(output, log_std, target):
+    """Robust L1 loss using a Lorentzian prior.
+    Allows for aleatoric uncertainty estimation.
+    """
+    loss = 2 ** 0.5 * (output - target).abs() / log_std.exp() + log_std
+    return loss.mean()
+
+
+def RobustL2Loss(output, log_std, target):
+    """Robust L2 loss using a gaussian prior.
+    Allows for aleatoric uncertainty estimation.
+    """
+    loss = 0.5 * (output - target) ** 2 / (2 * log_std).exp() + log_std
+    return loss.mean()
+
+
+def sampled_softmax(pre_logits, log_std, samples=10):
+    """Draw samples from Gaussian distributed pre-logits and use these to
+    estimate a mean and aleatoric uncertainty.
+    """
+    # NOTE here as we do not risk dividing by zero should we really be
+    # predicting log_std or is there another way to deal with negative numbers?
+    # This choice may have an unknown effect on the calibration of the uncertainties
+    sam_std = log_std.exp().repeat_interleave(samples, dim=0)
+    # TODO here we are normally distributing the samples even if the loss
+    # uses a different prior?
+    epsilon = torch.randn_like(sam_std)
+    pre_logits = pre_logits.repeat_interleave(samples, dim=0) + epsilon * sam_std
+    logits = softmax(pre_logits, dim=1).view(len(log_std), samples, -1)
+    return logits.mean(dim=1)

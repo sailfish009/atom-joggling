@@ -16,16 +16,12 @@ from torch.utils.tensorboard import SummaryWriter
 
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
-from supercon.mixup import SemiLoss, args, save_checkpoint, train, validate
+from supercon.mixup import SemiLoss, args, train, validate
+from supercon.utils import save_checkpoint
 
 # %%
-torch.manual_seed(0)
-
 use_cuda = torch.cuda.is_available()
 best_acc = 0  # best test accuracy
-
-# Data
-robust = False
 task = "classification"
 
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
@@ -55,7 +51,7 @@ unlabeled_loader = DataLoader(
 # Model
 elem_emb_len = labeled_set.elem_emb_len
 nbr_fea_len = labeled_set.nbr_fea_len
-model = CGCNN(task, robust, elem_emb_len, nbr_fea_len, n_targets=2)
+model = CGCNN(task, args.robust, elem_emb_len, nbr_fea_len, n_targets=2)
 if use_cuda:
     model.cuda()
 

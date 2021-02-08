@@ -4,22 +4,14 @@ import os
 import pandas as pd
 import torch
 from sklearn.model_selection import KFold
-from sklearn.model_selection import train_test_split as split
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.bench import benchmark
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
-from supercon.mixup import (
-    SemiLoss,
-    args,
-    mean,
-    save_checkpoint,
-    train,
-    validate,
-)
+from supercon.mixup import SemiLoss, args, train, validate
+from supercon.utils import mean, save_checkpoint
 
 # %%
 os.makedirs(args.out_dir, exist_ok=True)
@@ -27,24 +19,36 @@ os.makedirs(args.out_dir, exist_ok=True)
 best_accs, mean_accs = [], []
 
 use_cuda = torch.cuda.is_available()
-torch.manual_seed(0)
 
 # Data
-robust = False
 task = "classification"
 
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)
 unlabeled_df = df[df.label == -1].reset_index(drop=True)
-kfold = KFold(n_splits=5, random_state=0, shuffle=True)
+n_splits = 5
+kfold = KFold(n_splits, random_state=0, shuffle=True)
 
-for fold, (train_idx, test_idx) in enumerate(kfold.split(labeled_df)):
-    print(f"\n\nfold {fold}/{kfold.n_splits}")
+unlabeled_set = CrystalGraphData(unlabeled_df, task)
+
+elem_emb_len = unlabeled_set.elem_emb_len
+nbr_fea_len = unlabeled_set.nbr_fea_len
+model = CGCNN(task, args.robust, elem_emb_len, nbr_fea_len, n_targets=2)
+
+print(f"- Task: {task}")
+print(f"- Using CUDA: {use_cuda}")
+print(f"- Batch size: {args.batch_size:,d}")
+print(f"- Train iterations per epoch: {args.train_iterations:,d}")
+print(f"- Output directory: {args.out_dir}")
+print(f"- Unlabeled samples: {len(unlabeled_set):,d}")
+print(f"- Model params: {model.n_params:,d}")
+
+for fold, (train_idx, test_idx) in enumerate(kfold.split(labeled_df), 1):
+    print(f"\nFold {fold}/{n_splits}")
 
     train_df, test_df = labeled_df.iloc[train_idx], labeled_df.iloc[test_idx]
 
     labeled_set = CrystalGraphData(train_df, task)
-    unlabeled_set = CrystalGraphData(unlabeled_df, task)
     test_set = CrystalGraphData(test_df, task)
 
     loader_args = {
@@ -63,19 +67,12 @@ for fold, (train_idx, test_idx) in enumerate(kfold.split(labeled_df)):
     # Model
     elem_emb_len = labeled_set.elem_emb_len
     nbr_fea_len = labeled_set.nbr_fea_len
-    model = CGCNN(task, robust, elem_emb_len, nbr_fea_len, n_targets=2)
+    model = CGCNN(task, args.robust, elem_emb_len, nbr_fea_len, n_targets=2)
     if use_cuda:
         model.cuda()
 
-    print(f"- Task: {task}")
-    print(f"- Using CUDA: {use_cuda}")
-    print(f"- Total params: {model.n_params:,d}")
     print(f"- Labeled samples: {len(labeled_set):,d}")
-    print(f"- Unlabeled samples: {len(unlabeled_set):,d}")
     print(f"- Test samples: {len(test_set):,d}")
-    print(f"- Batch size: {args.batch_size:,d}")
-    print(f"- Train iterations per epoch: {args.train_iterations:,d}")
-    print(f"- Output directory: {args.out_dir}")
 
     # Train/test losses and optimizer
     train_criterion = SemiLoss(u_ramp_length=3 * args.train_iterations)
@@ -142,6 +139,6 @@ for fold, (train_idx, test_idx) in enumerate(kfold.split(labeled_df)):
     best_accs.append(best_acc)
 
 # %%
-print(f"{kfold.n_splits}-fold split results")
+print(f"{n_splits}-fold split results")
 print(f"mean accuracy: {mean(mean_accs):.3g}")
 print(f"mean best accuracies: {mean(best_accs):.3g}")

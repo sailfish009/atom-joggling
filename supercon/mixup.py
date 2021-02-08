@@ -1,61 +1,14 @@
-import argparse
 import sys
-from datetime import datetime
 
 import numpy as np
 import torch
 from tqdm import trange
 
-parser = argparse.ArgumentParser(description="PyTorch MixMatch Training")
-# Optimization options
-parser.add_argument(
-    "--epochs",
-    default=10,
-    type=int,
-    metavar="N",
-    help="number of total epochs to run",
-)
-parser.add_argument(
-    "--start-epoch",
-    default=0,
-    type=int,
-    metavar="N",
-    help="manual epoch number (useful on restarts)",
-)
-parser.add_argument(
-    "--batch-size", default=32, type=int, metavar="N", help="train batchsize"
-)
-parser.add_argument(
-    "--bootstrap-idx",
-    default=0,
-    type=int,
-    metavar="I",
-    help="index of sample to leave out of training set",
-)
-parser.add_argument(
-    "--lr",
-    "--learning-rate",
-    default=1e-3,
-    type=float,
-    metavar="LR",
-    help="initial learning rate",
-)
-# Checkpoints
-parser.add_argument(
-    "--resume",
-    default="",
-    type=str,
-    metavar="PATH",
-    help="path to latest checkpoint (default: none)",
-)
-# Method options
-# mixmatch used a default of 1024 but CIFAR10 is a way bigger dataset so 128 seems good
-parser.add_argument(
-    "--train-iterations", type=int, default=128, help="Number of batches per epoch"
-)
-parser.add_argument(
-    "--out-dir", default="runs/mixup", help="Directory to output the result"
-)
+from supercon.data import ROOT
+from supercon.utils import mean, parser
+
+# Method specific options
+
 # Mixup parameter of the Beta distribution
 parser.add_argument("--alpha", default=0.75, type=float)
 # weighting factor for the unlabeled loss term
@@ -63,15 +16,19 @@ parser.add_argument("--lambda-u", default=75, type=float)
 # temperature used during sharpening of the pseudo-label distribution
 parser.add_argument("--T", default=0.5, type=float)
 
+# mixmatch used a default of 1024 but CIFAR10 is a way bigger dataset so 128 seems good
+parser.add_argument(
+    "--train-iterations", type=int, default=128, help="Number of batches per epoch"
+)
 
 args, _ = parser.parse_known_args()
 
 # add time stamp if no custom out_dir was specified
-if not args.resume and args.out_dir == "runs/mixup":
-    args.out_dir += f"{datetime.now():%d-%m-%Y_%H-%M-%S}"
-
-np.random.seed(0)
-torch.manual_seed(0)
+if not args.resume and not args.out_dir:
+    out_dir = f"{ROOT}/runs/mixup/iters={args.train_iterations}_T={args.T}"
+    out_dir += f"alpha={args.alpha}-lambdaU={args.lambda_u}"
+    out_dir += "_robust" if args.robust else ""
+    args.out_dir = out_dir
 
 
 def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tuple:
@@ -95,7 +52,7 @@ def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tupl
     unlabeled_train_iter = iter(unlabeled_loader)
 
     model.train()
-    for batch_idx in trange(args.train_iterations, file=sys.stdout):
+    for _ in trange(args.train_iterations, desc="Batches:", file=sys.stdout):
         try:
             inputs_x, targets_x, *_ = next(labeled_train_iter)
         except StopIteration:
@@ -195,16 +152,6 @@ def validate(val_loader, model, criterion) -> tuple:
         avg_acc.append(acc.item())
 
     return mean(losses), mean(avg_acc)
-
-
-def mean(lst: list) -> float:
-    return sum(lst) / len(lst)
-
-
-def save_checkpoint(state: dict, is_best: bool, path: str) -> None:
-    torch.save(state, path + "/checkpoint")
-    if is_best:
-        torch.save(state, path + "/best_model")
 
 
 def linear_rampup(current: int, rampup_length: int) -> float:
