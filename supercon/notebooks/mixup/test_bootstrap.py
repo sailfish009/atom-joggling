@@ -29,14 +29,18 @@ results = []
 for file in os.listdir("runs/mixup/bootstrap"):
     mp_id = file.replace("_left_out", "")
     file = f"runs/mixup/bootstrap/{file}/best_model"
+
     checkpoint = torch.load(file, map_location=torch.device("cpu"))
     best_acc = checkpoint["best_acc"]
     model.load_state_dict(checkpoint["state_dict"])
-    sample_idx = id_to_idx_map[mp_id]
     model.eval()  # disables batch norm
+
+    sample_idx = id_to_idx_map[mp_id]
     inputs, [target], *_ = collate_batch([labeled_set[sample_idx]])
+
     with torch.no_grad():
         [pred] = model(*inputs)
+
     pred = pred.softmax(0).numpy()
     results.append([mp_id, target.item(), pred, pred.argmax()])
 

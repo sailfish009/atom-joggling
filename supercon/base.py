@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import torch
 from sklearn.metrics import f1_score
 from torch import nn
+from torch.nn import CrossEntropyLoss, L1Loss, NLLLoss
 from torch.nn.functional import softmax
 from tqdm import tqdm, trange
 
@@ -14,16 +15,21 @@ from supercon.utils import save_checkpoint
 class BaseModel(nn.Module, ABC):
     """ A base class for regression and classification models. """
 
-    def __init__(self, task, robust, device=None, epoch=1, checkpoint_dir=None):
+    def __init__(
+        self, task: str, robust: bool, epoch: int = 1, checkpoint_dir: str = None
+    ) -> None:
         super().__init__()
         self.task = task
         self.robust = robust
-        self.device = device
         self.epoch = epoch
         self.best_val_score = None
         self.val_score_name = "MAE" if task == "regression" else "Acc"
         self.model_params = {}
         self.checkpoint_dir = checkpoint_dir
+        if task == "classification":
+            self.criterion = NLLLoss() if robust else CrossEntropyLoss()
+        else:  # regression
+            self.criterion = RobustL1Loss if robust else L1Loss()
 
     @property
     def n_params(self, trainable=True):
@@ -34,13 +40,11 @@ class BaseModel(nn.Module, ABC):
         train_loader,
         val_loader,
         optimizer,
-        epochs,
-        criterion,
+        epochs: int,
         writer=None,
-        normalizer=None,
-        checkpoint=True,
-        verbose=True,
-    ):
+        checkpoint: bool = True,
+        verbose: bool = True,
+    ) -> None:
         start_epoch = self.epoch
         for epoch in trange(
             start_epoch, start_epoch + epochs, desc="Epochs: ", disable=verbose
@@ -49,9 +53,7 @@ class BaseModel(nn.Module, ABC):
             # Training
             if verbose:
                 print(f"\nEpoch: [{epoch}/{start_epoch + epochs - 1}]", flush=True)
-            train_metrics = self.evaluate(
-                train_loader, criterion, optimizer, normalizer, "train", verbose
-            )
+            train_metrics = self.evaluate(train_loader, optimizer, "train", verbose)
 
             if verbose:
                 metric_str = "\t ".join(
@@ -65,9 +67,7 @@ class BaseModel(nn.Module, ABC):
             else:
                 with torch.no_grad():
                     # Evaluate on validation set
-                    val_metrics = self.evaluate(
-                        val_loader, criterion, None, normalizer, action="val"
-                    )
+                    val_metrics = self.evaluate(val_loader, None, action="val")
 
                 if verbose:
                     metric_str = "\t ".join(
@@ -96,7 +96,7 @@ class BaseModel(nn.Module, ABC):
                     "val_score_name": self.val_score_name,
                     "optimizer": optimizer.state_dict(),
                 }
-
+                normalizer = train_loader.dataset.normalizer
                 if normalizer is not None:
                     checkpoint_dict["normalizer"] = normalizer.state_dict()
 
@@ -131,11 +131,14 @@ class BaseModel(nn.Module, ABC):
         #     torch.optim.swa_utils.update_bn(train_loader, self.swa["model"])
 
     def evaluate(
-        self, loader, criterion, optimizer, normalizer, action="train", verbose=False
-    ):
+        self, loader, optimizer, action: str = "train", verbose: bool = False
+    ) -> dict:
         """ Evaluate the model for one epoch """
 
         assert action in ["train", "val"], f"action must be train or val, got {action}"
+
+        normalizer = loader.dataset.normalizer
+
         self.train() if action == "train" else self.eval()
 
         # records both regr. and clf. metrics for an epoch to compute averages below
@@ -151,11 +154,11 @@ class BaseModel(nn.Module, ABC):
                 target_norm = normalizer.norm(target)
                 if self.robust:
                     mean, log_std = output.chunk(2, dim=1)
-                    loss = criterion(mean, log_std, target_norm)
+                    loss = self.criterion(mean, log_std, target_norm)
 
                     pred = normalizer.denorm(mean.data.cpu())
                 else:
-                    loss = criterion(output, target_norm)
+                    loss = self.criterion(output.squeeze(), target_norm)
                     pred = normalizer.denorm(output.data.cpu())
 
                 metrics["mae"] += [(pred - target).abs().mean()]
@@ -165,9 +168,9 @@ class BaseModel(nn.Module, ABC):
                 if self.robust:
                     output, log_std = output.chunk(2, dim=1)
                     logits = sampled_softmax(output, log_std)
-                    loss = criterion(torch.log(logits), target)
+                    loss = self.criterion(torch.log(logits), target)
                 else:
-                    loss = criterion(output, target)
+                    loss = self.criterion(output, target)
                     logits = softmax(output, dim=1)
                 metrics["acc"] += [(logits.argmax(1) == target).float().mean().cpu()]
 
@@ -189,7 +192,7 @@ class BaseModel(nn.Module, ABC):
         return metrics
 
     @torch.no_grad()
-    def predict(self, generator, verbose=False):
+    def predict(self, loader, verbose: bool = False) -> tuple:
         """ Generate predictions """
 
         material_ids, formulas, targets, outputs = [], [], [], []
@@ -198,7 +201,7 @@ class BaseModel(nn.Module, ABC):
         self.eval()
 
         # iterate over mini-batches
-        for features, targs, comps, ids in tqdm(generator, disable=not verbose):
+        for features, targs, comps, ids in tqdm(loader, disable=not verbose):
 
             # compute output
             output = self(*features)
@@ -215,7 +218,7 @@ class BaseModel(nn.Module, ABC):
         return material_ids, formulas, targets, outputs
 
     @abstractmethod
-    def forward(self, *x):
+    def forward(self, *inputs):
         """
         Forward pass through the model. Needs to be implemented in any derived
         model class.
@@ -223,35 +226,7 @@ class BaseModel(nn.Module, ABC):
         raise NotImplementedError("forward() is not defined!")
 
 
-class Normalizer:
-    """Normalize a tensor and restore it later."""
-
-    def __init__(self):
-        self.mean = None
-        self.std = None
-
-    def fit(self, tensor, dim=0, keepdim=False):
-        """tensor is taken as a sample to calculate the mean and std"""
-        self.mean = tensor.mean(dim, keepdim)
-        self.std = tensor.std(dim, keepdim)
-
-    def norm(self, tensor):
-        assert [self.mean, self.std] != [None, None], "Normalizer must be fit first"
-        return (tensor - self.mean) / self.std
-
-    def denorm(self, normed_tensor):
-        assert [self.mean, self.std] != [None, None], "Normalizer must be fit first"
-        return normed_tensor * self.std + self.mean
-
-    def state_dict(self):
-        return {"mean": self.mean, "std": self.std}
-
-    def load_state_dict(self, state_dict):
-        self.mean = state_dict["mean"].cpu()
-        self.std = state_dict["std"].cpu()
-
-
-def RobustL1Loss(output, log_std, target):
+def RobustL1Loss(output, log_std, target) -> float:
     """Robust L1 loss using a Lorentzian prior.
     Allows for aleatoric uncertainty estimation.
     """
@@ -259,7 +234,7 @@ def RobustL1Loss(output, log_std, target):
     return loss.mean()
 
 
-def RobustL2Loss(output, log_std, target):
+def RobustL2Loss(output, log_std, target) -> float:
     """Robust L2 loss using a gaussian prior.
     Allows for aleatoric uncertainty estimation.
     """
@@ -267,7 +242,7 @@ def RobustL2Loss(output, log_std, target):
     return loss.mean()
 
 
-def sampled_softmax(pre_logits, log_std, samples=10):
+def sampled_softmax(pre_logits, log_std, samples: int = 10) -> float:
     """Draw samples from Gaussian distributed pre-logits and use these to
     estimate a mean and aleatoric uncertainty.
     """

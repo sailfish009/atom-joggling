@@ -21,6 +21,13 @@ def save_checkpoint(state: dict, is_best: bool, path: str) -> None:
 parser = argparse.ArgumentParser(description="PyTorch MixMatch Training")
 # Optimization options
 parser.add_argument(
+    "--task",
+    default="classification",
+    type=str,
+    metavar="STR",
+    help="'regression' or 'classification'",
+)
+parser.add_argument(
     "--epochs",
     default=10,
     type=int,

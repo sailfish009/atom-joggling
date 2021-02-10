@@ -22,7 +22,7 @@ from supercon.utils import save_checkpoint
 # %%
 use_cuda = torch.cuda.is_available()
 best_acc = 0  # best test accuracy
-task = "classification"
+task = args.task
 
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)

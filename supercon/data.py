@@ -3,8 +3,10 @@ import json
 import pickle
 from functools import lru_cache
 from os.path import abspath, dirname, exists
+from typing import Iterable, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
@@ -12,24 +14,57 @@ from torch.utils.data import Dataset
 ROOT = dirname(dirname(abspath(__file__)))
 
 
+class Normalizer:
+    """Normalize a tensor and restore it later."""
+
+    def __init__(self) -> None:
+        self.mean = None
+        self.std = None
+
+    def fit(self, tensor: torch.Tensor, dim: int = 0) -> None:
+        self.mean = tensor.mean(dim)
+        self.std = tensor.std(dim)
+        assert (self.std != 0).all(), "self.std has 0 entries, cannot divide by 0"
+
+    def norm(self, tensor: torch.Tensor) -> torch.Tensor:
+        assert self.is_fit, "Normalizer must be fit first"
+        return (tensor - self.mean) / self.std
+
+    def denorm(self, normed_tensor: torch.Tensor) -> torch.Tensor:
+        assert self.is_fit, "Normalizer must be fit first"
+        return normed_tensor * self.std + self.mean
+
+    def state_dict(self) -> dict:
+        return {"mean": self.mean, "std": self.std}
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        self.mean = state_dict["mean"].cpu()
+        self.std = state_dict["std"].cpu()
+
+    @property
+    def is_fit(self) -> bool:
+        return [self.mean, self.std] != [None, None]
+
+
 class CrystalGraphData(Dataset):
     """Dataset wrapper for crystal structure data in CIF format."""
 
     def __init__(
         self,
-        df,
-        task,
-        fea_path=f"{ROOT}/data/cgcnn-embedding.json",
-        struct_path=f"{ROOT}/data/structures",
-        max_num_nbr=12,
-        radius=8,
-        dmin=0,
-        step=0.2,
-    ):
+        df: pd.DataFrame,
+        task: str,
+        fea_path: str = f"{ROOT}/data/cgcnn-embedding.json",
+        struct_path: str = f"{ROOT}/data/structures",
+        max_num_nbr: int = 12,
+        radius: int = 5,
+        dmin: int = 0,
+        step: float = 0.2,
+        normalizer=Normalizer(),
+    ) -> None:
         """
         Args:
-            df (str): dataframe with materials to train
-                expected cols: [material_id, formula/composition, target(s)]
+            df (pd.DataFrame): Dataframe expected to have the following
+                columns: [material_id, composition, targets]
             fea_path (str): The path to the element embedding
             task (str): "regression" or "classification"
             max_num_nbr (int, optional): The maximum number of neighbors while
@@ -40,6 +75,8 @@ class CrystalGraphData(Dataset):
                 GaussianDistance. Defaults to 0.
             step (float, optional): The step size for constructing GaussianDistance.
                 Defaults to 0.2.
+            normalizer (Normalizer): For z-scoring target data (zero mean, unit std).
+                Defaults to None.
         """
 
         assert exists(fea_path), f"fea_path='{fea_path}' does not exist!"
@@ -47,7 +84,7 @@ class CrystalGraphData(Dataset):
 
         self.df = df
         self.struct_path = struct_path
-        self.ari = Featurizer.from_json(fea_path)
+        self.ari = GraphFeaturizer.from_json(fea_path)
         self.elem_emb_len = self.ari.embedding_size
 
         self.max_num_nbr = max_num_nbr
@@ -57,22 +94,28 @@ class CrystalGraphData(Dataset):
         self.nbr_fea_len = self.gdf.embedding_size
 
         self.task = task
-        self.n_targets = self.df.label.max() + 1 if task == "classification" else 1
+        targets = df.iloc[:, 2]
+        self.n_targets = targets.max() + 1 if task == "classification" else 1
 
-    def __len__(self):
+        self.normalizer = None if task == "classification" else normalizer
+        if normalizer is not None and not normalizer.is_fit:
+            normalizer.fit(targets)
+
+    def __len__(self) -> int:
         return len(self.df)
 
     @lru_cache(maxsize=None)  # Cache loaded structures
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[tuple, torch.Tensor, str, str]:
         """
         Returns:
-            atom_fea: torch.Tensor(n_i, atom_fea_len)
-            nbr_fea: torch.Tensor(n_i, M, nbr_fea_len)
-            self_fea_idx: torch.LongTensor(n_i, M)
-            neighbor_fea_idx: torch.LongTensor(n_i, M)
+            features (tuple):
+            - atom_fea: torch.Tensor(n_i, atom_fea_len)
+            - nbr_fea: torch.Tensor(n_i, M, nbr_fea_len)
+            - self_fea_idx: torch.LongTensor(n_i, M)
+            - neighbor_fea_idx: torch.LongTensor(n_i, M)
             target: torch.Tensor(1)
             comp: str
-            cif_id: str or int
+            material_id: str
         """
         material_id, formula, target = self.df.iloc[idx][:3]
 
@@ -85,27 +128,10 @@ class CrystalGraphData(Dataset):
         atom_fea = [atom.specie.symbol for atom in crystal]
 
         # neighbors
-        all_nbrs = crystal.get_all_neighbors(self.radius, include_index=True)
-        all_nbrs = [sorted(nbrs, key=lambda x: x[1]) for nbrs in all_nbrs]
-        self_fea_idx, neighbor_fea_idx, nbr_fea = [], [], []
-
-        for i, nbr in enumerate(all_nbrs):
-            # NOTE due to using a geometric learning library we do not
-            # need to set a maximum number of neighbors but do so in
-            # order to replicate the original code.
-            if len(nbr) < self.max_num_nbr:
-                neighbor_fea_idx.extend([x[2] for x in nbr])
-                nbr_fea.extend([x[1] for x in nbr])
-            else:
-                neighbor_fea_idx.extend([x[2] for x in nbr[: self.max_num_nbr]])
-                nbr_fea.extend([x[1] for x in nbr[: self.max_num_nbr]])
-
-            if len(nbr) == 0:
-                raise ValueError(
-                    f"Isolated atom found in {material_id} ({formula}) - "
-                    "increase maximum radius or remove structure"
-                )
-            self_fea_idx.extend([i] * min(len(nbr), self.max_num_nbr))
+        self_fea_idx, neighbor_fea_idx, _, nbr_fea = crystal.get_neighbor_list(
+            self.radius,
+            numerical_tol=1e-8,
+        )
 
         nbr_fea = np.array(nbr_fea)
 
@@ -118,6 +144,7 @@ class CrystalGraphData(Dataset):
         neighbor_fea_idx = torch.LongTensor(neighbor_fea_idx)
 
         if self.task == "regression":
+            target = self.normalizer.norm(target)
             target = torch.Tensor([float(target)])
         elif self.task == "classification":
             target = torch.LongTensor([target])
@@ -130,7 +157,9 @@ class CrystalGraphData(Dataset):
 class GaussianDistance:
     """ Expands distances by a Gaussian basis. (unit: angstrom) """
 
-    def __init__(self, dmin, dmax, step, var=None):
+    def __init__(
+        self, dmin: float, dmax: float, step: float, var: float = None
+    ) -> None:
         """
         Args:
             dmin (float): Minimum interatomic distance
@@ -144,7 +173,7 @@ class GaussianDistance:
         self.embedding_size = len(self.filter)
         self.var = var or step
 
-    def expand(self, distances):
+    def expand(self, distances: np.ndarray) -> np.ndarray:
         """Apply Gaussian distance filter to a numpy distance array.
 
         Args:
@@ -157,7 +186,7 @@ class GaussianDistance:
         return np.exp(-((distances[..., None] - self.filter) ** 2) / self.var ** 2)
 
 
-def collate_batch(batch, use_cuda=False):
+def collate_batch(batch: tuple, use_cuda: bool = False) -> tuple:
     """
     Collate a list of data and return a batch for predicting crystal
     properties.
@@ -172,7 +201,7 @@ def collate_batch(batch, use_cuda=False):
         nbr_fea: torch.Tensor shape (n_i, M, nbr_fea_len)
         neighbor_fea_idx: torch.LongTensor shape (n_i, M)
         target: torch.Tensor shape (1, )
-        cif_id: str or int
+        material_id: str
 
     Returns
     -------
@@ -188,11 +217,11 @@ def collate_batch(batch, use_cuda=False):
         Mapping from the crystal idx to atom idx
     target: torch.Tensor shape (N, 1)
         Target value for prediction
-    cif_ids: list
+    material_ids: list
     """
     batch_self_fea_idx, batch_nbr_fea_idxs, crystal_atom_idx = [], [], []
     base_idx = 0
-    features, targets, compositions, cif_ids = zip(*batch)
+    features, targets, compositions, material_ids = zip(*batch)
 
     atom_feas, nbr_feas, self_fea_idxs, neighbor_fea_idxs = zip(*features)
     for (idx, atom_fea) in enumerate(atom_feas):
@@ -215,33 +244,38 @@ def collate_batch(batch, use_cuda=False):
     if use_cuda:
         out_features = [t.cuda() for t in out_features]
         targets = targets.cuda()
-    return out_features, targets, compositions, cif_ids
+    return out_features, targets, compositions, material_ids
 
 
-class Featurizer:
-    """Base class for featurizing nodes and edges."""
+class GraphFeaturizer:
+    """Base class for featurizing nodes and edges in a crystal graph."""
 
-    def __init__(self, allowed_types):
+    def __init__(self, allowed_types: Iterable[str]) -> None:
+        """
+        Args:
+            allowed_types (Iterable[str]): element names for which embeddings
+                are available
+        """
         self.allowed_types = set(allowed_types)
         self._embedding = {}
 
-    def get_fea(self, key):
+    def get_fea(self, key: str) -> np.ndarray:
         assert key in self.allowed_types, f"{key} is not an allowed atom type"
         return self._embedding[key]
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: dict) -> None:
         self._embedding = state_dict
         self.allowed_types = set(self._embedding.keys())
 
-    def get_state_dict(self):
+    def get_state_dict(self) -> dict:
         return self._embedding
 
     @property
-    def embedding_size(self):
+    def embedding_size(self) -> int:
         return len(self._embedding[list(self._embedding.keys())[0]])
 
     @classmethod
-    def from_json(cls, embedding_file):
+    def from_json(cls, embedding_file: str) -> "GraphFeaturizer":
         with open(embedding_file) as file:
             embedding = json.load(file)
         allowed_types = set(embedding.keys())

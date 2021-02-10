@@ -1,5 +1,7 @@
 # Supercon
 
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/janosh/supercon/master.svg)](https://results.pre-commit.ci/latest/github/janosh/supercon/master)
+
 [CGCNN](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.145301) + [Materials Project](https://materialsproject.org/) + [MixMatch](https://arxiv.org/abs/1905.02249) for searching superconductors
 
 ## Roadmap
