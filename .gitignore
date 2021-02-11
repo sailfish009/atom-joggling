@@ -3,6 +3,9 @@
 runs
 **/runs
 
+# debugging
+tmp
+
 # slurm log files on CSD3
 *.out
 

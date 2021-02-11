@@ -52,12 +52,12 @@ class BaseModel(nn.Module, ABC):
             self.epoch += 1
             # Training
             if verbose:
-                print(f"\nEpoch: [{epoch}/{start_epoch + epochs - 1}]", flush=True)
+                print(f"\nEpoch {epoch}/{start_epoch + epochs - 1}", flush=True)
             train_metrics = self.evaluate(train_loader, optimizer, "train", verbose)
 
             if verbose:
-                metric_str = "\t ".join(
-                    f"{key} {val:.3f}" for key, val in train_metrics.items()
+                metric_str = " ".join(
+                    f"{key} {val:<7.3f}" for key, val in train_metrics.items()
                 )
                 print(f"Train      : {metric_str}")
 
@@ -70,8 +70,8 @@ class BaseModel(nn.Module, ABC):
                     val_metrics = self.evaluate(val_loader, None, action="val")
 
                 if verbose:
-                    metric_str = "\t ".join(
-                        f"{key} {val:.3f}" for key, val in val_metrics.items()
+                    metric_str = " ".join(
+                        f"{key} {val:<7.3f}" for key, val in val_metrics.items()
                     )
                     print(f"Validation : {metric_str}")
 
@@ -96,9 +96,6 @@ class BaseModel(nn.Module, ABC):
                     "val_score_name": self.val_score_name,
                     "optimizer": optimizer.state_dict(),
                 }
-                normalizer = train_loader.dataset.normalizer
-                if normalizer is not None:
-                    checkpoint_dict["normalizer"] = normalizer.state_dict()
 
                 if hasattr(self, "swa"):
                     checkpoint_dict["swa"] = self.swa.copy()
@@ -137,8 +134,6 @@ class BaseModel(nn.Module, ABC):
 
         assert action in ["train", "val"], f"action must be train or val, got {action}"
 
-        normalizer = loader.dataset.normalizer
-
         self.train() if action == "train" else self.eval()
 
         # records both regr. and clf. metrics for an epoch to compute averages below
@@ -151,18 +146,15 @@ class BaseModel(nn.Module, ABC):
             output = self(*input_)
 
             if self.task == "regression":
-                target_norm = normalizer.norm(target)
                 if self.robust:
-                    mean, log_std = output.chunk(2, dim=1)
-                    loss = self.criterion(mean, log_std, target_norm)
+                    output, log_std = output.chunk(2, dim=1)
+                    loss = self.criterion(output, log_std, target)
 
-                    pred = normalizer.denorm(mean.data.cpu())
                 else:
-                    loss = self.criterion(output.squeeze(), target_norm)
-                    pred = normalizer.denorm(output.data.cpu())
+                    loss = self.criterion(output, target)
 
-                metrics["mae"] += [(pred - target).abs().mean()]
-                metrics["rmse"] += [(pred - target).pow(2).mean().sqrt()]
+                metrics["mae"] += [(output - target).abs().mean()]
+                metrics["rmse"] += [(output - target).pow(2).mean().sqrt()]
 
             else:  # classification
                 if self.robust:

@@ -10,7 +10,14 @@ from tqdm import tqdm
 from supercon.data import ROOT
 
 # %% Yunwei's hand-crafted superconductivity dataset
-df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv", index_col="material_id")
+# df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv", index_col="material_id")
+
+
+# %% Rhys' larger polymorph formation energy dataset
+# (originally compiled to compare Wren with CGCNN)
+df = pd.read_csv(
+    f"{ROOT}/data/e_formation/mp-polymorphs-spglib.csv", index_col="material_id"
+)
 
 
 # %%
@@ -24,6 +31,12 @@ with MPRester(API_KEY) as mp:
     structures = mp.query(
         {"material_id": {"$in": mp_ids}}, ["material_id", "structure"]
     )
+
+# use set difference operation
+ids_missing_structs = {*mp_ids} - {x["material_id"] for x in structures}
+
+print(f"found {len(structures)}/{len(mp_ids)} structures")
+print(f"material IDs with missing structures: {ids_missing_structs}")
 
 
 # %%

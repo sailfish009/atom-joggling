@@ -9,7 +9,7 @@ torch.manual_seed(0)
 
 
 def mean(lst: list) -> float:
-    return sum(lst) / len(lst)
+    return sum(lst) / (len(lst) or 1)
 
 
 def save_checkpoint(state: dict, is_best: bool, path: str) -> None:
@@ -19,13 +19,20 @@ def save_checkpoint(state: dict, is_best: bool, path: str) -> None:
 
 
 parser = argparse.ArgumentParser(description="PyTorch MixMatch Training")
-# Optimization options
+
 parser.add_argument(
     "--task",
     default="classification",
     type=str,
     metavar="STR",
     help="'regression' or 'classification'",
+)
+parser.add_argument(
+    "--csv-path",
+    default="data/supercon/labeled.csv",
+    type=str,
+    metavar="STR",
+    help="Path relative to project root to the CSV file holding the training data",
 )
 parser.add_argument(
     "--epochs",
@@ -69,6 +76,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--robust", action="store_true", help="Whether to use a heteroscedastic loss"
+)
+parser.add_argument(
+    "--verbose", action="store_true", help="Whether to print metrics during training"
 )
 
 parser.add_argument("--out-dir", default="", help="Directory to output the result")

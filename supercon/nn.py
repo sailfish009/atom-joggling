@@ -1,7 +1,7 @@
 from typing import List
 
 import torch
-from torch import nn
+from torch import Tensor, nn
 from torch.nn.functional import softplus
 from torch_scatter import scatter_add
 from torch_scatter.scatter import scatter_mean
@@ -62,7 +62,7 @@ class ConvLayer(nn.Module):
         filter_fea = torch.sigmoid(filter_fea)
         core_fea = softplus(core_fea)
 
-        # take the elementwise product of the filter and core
+        # take the element-wise product of the filter and core
         nbr_msg = filter_fea * core_fea
         nbr_sumed = scatter_add(nbr_msg, self_fea_idx, dim=0)  # sum pooling
 
@@ -134,31 +134,20 @@ class DescriptorNet(nn.Module):
 
 
 class SimpleNet(nn.Module):
-    """ Simple Feed Forward Neural Network """
+    """ Simple fully-connected neural net """
 
-    def __init__(
-        self, dims: List[int], activation=nn.LeakyReLU, batchnorm: bool = False
-    ) -> None:
+    def __init__(self, dims: List[int], activation=nn.LeakyReLU) -> None:
         super().__init__()
-        output_dim = dims.pop()
+        out_dim = dims.pop()
 
-        self.fcs = nn.ModuleList(
-            [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
-        )
+        self.layers = nn.ModuleList(nn.Linear(d1, d2) for d1, d2 in zip(dims, dims[1:]))
 
-        if batchnorm:
-            self.bns = nn.ModuleList(
-                [nn.BatchNorm1d(dims[i + 1]) for i in range(len(dims) - 1)]
-            )
-        else:
-            self.bns = nn.ModuleList([nn.Identity() for i in range(len(dims) - 1)])
+        self.acts = nn.ModuleList(activation() for _ in dims[1:])
 
-        self.acts = nn.ModuleList([activation() for _ in range(len(dims) - 1)])
+        self.linear_out = nn.Linear(dims[-1], out_dim)
 
-        self.fc_out = nn.Linear(dims[-1], output_dim)
+    def forward(self, x: Tensor) -> Tensor:
+        for linear, act in zip(self.layers, self.acts):
+            x = act(linear(x))
 
-    def forward(self, x):
-        for fc, bn, act in zip(self.fcs, self.bns, self.acts):
-            x = act(bn(fc(x)))
-
-        return self.fc_out(x)
+        return self.linear_out(x).squeeze()

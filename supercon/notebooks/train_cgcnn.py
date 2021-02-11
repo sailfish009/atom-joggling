@@ -5,32 +5,49 @@ from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.bench import benchmark
+from supercon.bench import benchmark_classifier
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
 from supercon.utils import mean, parser
 
 # %%
-df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
-df = df[df.label >= 0].reset_index(drop=True)
+args, _ = parser.parse_known_args()
+
+df = pd.read_csv(f"{ROOT}/{args.csv_path}").iloc[:, 0:3]
 
 n_splits = 5
 kfold = KFold(n_splits, random_state=0, shuffle=True)
 
-print(f"dummy accuracy: {df.iloc[:, 2].mean():.3f}")
-
-args, _ = parser.parse_known_args()
 
 untrained_accs, test_accs = [], []
 roc_aucs, avg_precs = [], []
+use_cuda = torch.cuda.is_available()
 batch_size = args.batch_size
 epochs = args.epochs
 task = args.task
+verbose = args.verbose
 
 out_dir = (
     args.out_dir
-    or f"{ROOT}/runs/cgcnn/{n_splits}folds-{epochs}epochs-{batch_size}bsize"
+    or f"{ROOT}/runs/cgcnn/{n_splits}folds-{epochs}epochs-{batch_size}batch"
 )
+
+loader_args = {
+    "batch_size": batch_size,
+    "collate_fn": lambda batch: collate_batch(batch, use_cuda),
+}
+
+print(f"\n- Task: {task}")
+print(f"- Using CUDA: {use_cuda}")
+print(f"- Number of samples: {len(df):,d}")
+print(f"- Batch size: {batch_size:,d}")
+print(f"- Output directory: {out_dir}")
+
+targets = df.iloc[:, 2]
+if task == "classification":
+    print(f"\ndummy accuracy: {targets.mean():.3f}")
+else:  # regression
+    print(f"dummy MAE: {(targets - targets.mean()).abs().mean():.3f}")
 
 # %%
 for fold, (train_idx, test_idx) in enumerate(kfold.split(df), 1):
@@ -39,41 +56,43 @@ for fold, (train_idx, test_idx) in enumerate(kfold.split(df), 1):
     train_df, test_df = df.iloc[train_idx], df.iloc[test_idx]
 
     train_set = CrystalGraphData(train_df, task)
-    test_set = CrystalGraphData(test_df, task, normalizer=train_set.normalizer)
-
-    elem_emb_len = train_set.elem_emb_len
-    nbr_fea_len = train_set.nbr_fea_len
+    test_set = CrystalGraphData(test_df, task)
 
     model = CGCNN(
         task,
         args.robust,
-        elem_emb_len,
-        nbr_fea_len,
+        train_set.elem_emb_len,
+        train_set.nbr_fea_len,
         n_targets=train_set.n_targets,
         checkpoint_dir=fold_dir,
     )
+    if use_cuda:
+        model.cuda()
 
     optimizer = torch.optim.AdamW(model.parameters())
 
-    train_loader = DataLoader(
-        train_set, collate_fn=collate_batch, batch_size=batch_size
-    )
-    test_loader = DataLoader(test_set, collate_fn=collate_batch, batch_size=batch_size)
+    train_loader = DataLoader(train_set, **loader_args)
+    test_loader = DataLoader(test_set, **loader_args)
 
     writer = SummaryWriter(fold_dir)
 
     # sanity check: test untrained model performance
     material_ids, formulas, targets, outputs = model.predict(test_loader)
-    untrained_acc = (targets == outputs.argmax(1)).float().mean()
-    untrained_accs.append(untrained_acc)
-    print(f"untrained accuracy: {untrained_acc:.3f}")
 
-    model.fit(train_loader, test_loader, optimizer, epochs, writer, verbose=True)
+    if task == "classification":
+        untrained_acc = (targets == outputs.argmax(1)).float().mean()
+        untrained_accs.append(untrained_acc)
+        print(f"untrained accuracy: {untrained_acc:.3f}")
+    else:  # regression
+        print(f"untrained MAE: {(targets - outputs).abs().mean():.3f}")
 
-    df, roc_auc, avg_prec = benchmark(model, test_loader, out_dir)
-    roc_aucs.append(roc_auc)
-    avg_precs.append(avg_prec)
-    test_accs.append((df.target == df.pred).mean())
+    model.fit(train_loader, test_loader, optimizer, epochs, writer, verbose=verbose)
+
+    if task == "classification":
+        out_df, roc_auc, avg_prec = benchmark_classifier(model, test_loader, out_dir)
+        roc_aucs.append(roc_auc)
+        avg_precs.append(avg_prec)
+        test_accs.append((out_df.target == out_df.pred).mean())
 
 
 # %%

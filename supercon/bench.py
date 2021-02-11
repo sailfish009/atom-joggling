@@ -8,12 +8,12 @@ from sklearn.metrics import (
 )
 
 
-def benchmark(model, test_loader, out_dir=None):
+def benchmark_classifier(model, test_loader, out_dir=None):
     mp_ids, formulas, targets, preds = model.predict(test_loader)
     preds = preds.softmax(1).numpy()
 
     df = pd.DataFrame(
-        [mp_ids, formulas, targets, *zip(*preds), preds.argmax(-1)],
+        [mp_ids, formulas, targets.numpy(), *zip(*preds), preds.argmax(-1)],
         index=["material_id", "formula", "target", "softmax_0", "softmax_1", "pred"],
     ).T
 

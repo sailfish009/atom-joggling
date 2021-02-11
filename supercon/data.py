@@ -14,38 +14,6 @@ from torch.utils.data import Dataset
 ROOT = dirname(dirname(abspath(__file__)))
 
 
-class Normalizer:
-    """Normalize a tensor and restore it later."""
-
-    def __init__(self) -> None:
-        self.mean = None
-        self.std = None
-
-    def fit(self, tensor: torch.Tensor, dim: int = 0) -> None:
-        self.mean = tensor.mean(dim)
-        self.std = tensor.std(dim)
-        assert (self.std != 0).all(), "self.std has 0 entries, cannot divide by 0"
-
-    def norm(self, tensor: torch.Tensor) -> torch.Tensor:
-        assert self.is_fit, "Normalizer must be fit first"
-        return (tensor - self.mean) / self.std
-
-    def denorm(self, normed_tensor: torch.Tensor) -> torch.Tensor:
-        assert self.is_fit, "Normalizer must be fit first"
-        return normed_tensor * self.std + self.mean
-
-    def state_dict(self) -> dict:
-        return {"mean": self.mean, "std": self.std}
-
-    def load_state_dict(self, state_dict: dict) -> None:
-        self.mean = state_dict["mean"].cpu()
-        self.std = state_dict["std"].cpu()
-
-    @property
-    def is_fit(self) -> bool:
-        return [self.mean, self.std] != [None, None]
-
-
 class CrystalGraphData(Dataset):
     """Dataset wrapper for crystal structure data in CIF format."""
 
@@ -59,7 +27,6 @@ class CrystalGraphData(Dataset):
         radius: int = 5,
         dmin: int = 0,
         step: float = 0.2,
-        normalizer=Normalizer(),
     ) -> None:
         """
         Args:
@@ -75,8 +42,6 @@ class CrystalGraphData(Dataset):
                 GaussianDistance. Defaults to 0.
             step (float, optional): The step size for constructing GaussianDistance.
                 Defaults to 0.2.
-            normalizer (Normalizer): For z-scoring target data (zero mean, unit std).
-                Defaults to None.
         """
 
         assert exists(fea_path), f"fea_path='{fea_path}' does not exist!"
@@ -97,10 +62,6 @@ class CrystalGraphData(Dataset):
         targets = df.iloc[:, 2]
         self.n_targets = targets.max() + 1 if task == "classification" else 1
 
-        self.normalizer = None if task == "classification" else normalizer
-        if normalizer is not None and not normalizer.is_fit:
-            normalizer.fit(targets)
-
     def __len__(self) -> int:
         return len(self.df)
 
@@ -109,11 +70,11 @@ class CrystalGraphData(Dataset):
         """
         Returns:
             features (tuple):
-            - atom_fea: torch.Tensor(n_i, atom_fea_len)
-            - nbr_fea: torch.Tensor(n_i, M, nbr_fea_len)
+            - atom_fea: Tensor(n_i, atom_fea_len)
+            - nbr_fea: Tensor(n_i, M, nbr_fea_len)
             - self_fea_idx: torch.LongTensor(n_i, M)
             - neighbor_fea_idx: torch.LongTensor(n_i, M)
-            target: torch.Tensor(1)
+            target: Tensor(1)
             comp: str
             material_id: str
         """
@@ -144,7 +105,6 @@ class CrystalGraphData(Dataset):
         neighbor_fea_idx = torch.LongTensor(neighbor_fea_idx)
 
         if self.task == "regression":
-            target = self.normalizer.norm(target)
             target = torch.Tensor([float(target)])
         elif self.task == "classification":
             target = torch.LongTensor([target])
@@ -197,25 +157,25 @@ def collate_batch(batch: tuple, use_cuda: bool = False) -> tuple:
     dataset_list: list of tuples for each data point.
         (atom_fea, nbr_fea, neighbor_fea_idx, target)
 
-        atom_fea: torch.Tensor shape (n_i, atom_fea_len)
-        nbr_fea: torch.Tensor shape (n_i, M, nbr_fea_len)
+        atom_fea: Tensor shape (n_i, atom_fea_len)
+        nbr_fea: Tensor shape (n_i, M, nbr_fea_len)
         neighbor_fea_idx: torch.LongTensor shape (n_i, M)
-        target: torch.Tensor shape (1, )
+        target: Tensor shape (1, )
         material_id: str
 
     Returns
     -------
     N = sum(n_i); N0 = sum(i)
 
-    atom_feas: torch.Tensor shape (N, orig_atom_fea_len)
+    atom_feas: Tensor shape (N, orig_atom_fea_len)
         Atom features from atom type
-    nbr_feas: torch.Tensor shape (N, M, nbr_fea_len)
+    nbr_feas: Tensor shape (N, M, nbr_fea_len)
         Bond features of each atom's M neighbors
     nbr_fea_idxs: torch.LongTensor shape (N, M)
         Indices of M neighbors of each atom
     crystal_atom_idx: list of torch.LongTensor of length N0
         Mapping from the crystal idx to atom idx
-    target: torch.Tensor shape (N, 1)
+    target: Tensor shape (N, 1)
         Target value for prediction
     material_ids: list
     """
@@ -253,8 +213,8 @@ class GraphFeaturizer:
     def __init__(self, allowed_types: Iterable[str]) -> None:
         """
         Args:
-            allowed_types (Iterable[str]): element names for which embeddings
-                are available
+            allowed_types (Iterable[str]): names of element names for which
+            to store embeddings
         """
         self.allowed_types = set(allowed_types)
         self._embedding = {}
@@ -272,7 +232,7 @@ class GraphFeaturizer:
 
     @property
     def embedding_size(self) -> int:
-        return len(self._embedding[list(self._embedding.keys())[0]])
+        return len(list(self._embedding.values())[0])
 
     @classmethod
     def from_json(cls, embedding_file: str) -> "GraphFeaturizer":
