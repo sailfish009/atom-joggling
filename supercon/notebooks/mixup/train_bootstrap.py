@@ -20,10 +20,6 @@ from supercon.mixup import SemiLoss, args, train, validate
 from supercon.utils import save_checkpoint
 
 # %%
-use_cuda = torch.cuda.is_available()
-best_acc = 0  # best test accuracy
-task = args.task
-
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)
 unlabeled_df = df[df.label == -1].reset_index(drop=True)
@@ -34,6 +30,12 @@ train_df = labeled_df.drop(args.bootstrap_idx)
 
 out_dir = f"{args.out_dir}/{test_sample.material_id}_left_out"
 os.makedirs(out_dir, exist_ok=True)
+
+print(f"- Task: {(task := args.task)}")
+print(f"- Using CUDA: {(use_cuda := torch.cuda.is_available())}")
+print(f"- Batch size: {args.batch_size:,d}")
+print(f"- Train iterations per epoch: {args.train_iterations:,d}")
+print(f"- Output directory: {out_dir}")
 
 labeled_set = CrystalGraphData(train_df, task)
 unlabeled_set = CrystalGraphData(unlabeled_df, task)
@@ -48,6 +50,7 @@ unlabeled_loader = DataLoader(
     unlabeled_set, shuffle=True, **loader_args, drop_last=True
 )
 
+
 # Model
 elem_emb_len = labeled_set.elem_emb_len
 nbr_fea_len = labeled_set.nbr_fea_len
@@ -55,14 +58,9 @@ model = CGCNN(task, args.robust, elem_emb_len, nbr_fea_len, n_targets=2)
 if use_cuda:
     model.cuda()
 
-print(f"- Task: {task}")
-print(f"- Using CUDA: {use_cuda}")
 print(f"- Total params: {model.n_params:,d}")
 print(f"- Labeled samples: {len(labeled_set):,d}")
 print(f"- Unlabeled samples: {len(unlabeled_set):,d}")
-print(f"- Batch size: {args.batch_size:,d}")
-print(f"- Train iterations per epoch: {args.train_iterations:,d}")
-print(f"- Output directory: {out_dir}")
 
 # Train/test losses and optimizer
 criterion = SemiLoss(u_ramp_length=3 * args.train_iterations)

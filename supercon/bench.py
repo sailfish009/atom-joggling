@@ -11,10 +11,11 @@ from sklearn.metrics import (
 def benchmark_classifier(model, test_loader, out_dir=None):
     mp_ids, formulas, targets, preds = model.predict(test_loader)
     preds = preds.softmax(1).numpy()
+    softmax_cols = [f"softmax_{idx}" for idx in range(preds.size(1))]
 
     df = pd.DataFrame(
         [mp_ids, formulas, targets.numpy(), *zip(*preds), preds.argmax(-1)],
-        index=["material_id", "formula", "target", "softmax_0", "softmax_1", "pred"],
+        index=["material_id", "formula", "target", *softmax_cols, "pred"],
     ).T
 
     df.plot.bar(x="formula", y=["softmax_1", "target"])
