@@ -8,6 +8,8 @@ from typing import Iterable, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from pymatgen import Structure
+from torch import LongTensor, Tensor
 from torch.utils.data import Dataset
 
 # absolute path to the project's root directory
@@ -65,53 +67,56 @@ class CrystalGraphData(Dataset):
     def __len__(self) -> int:
         return len(self.df)
 
-    @lru_cache(maxsize=None)  # Cache loaded structures
-    def __getitem__(self, idx: int) -> Tuple[tuple, torch.Tensor, str, str]:
+    def __getitem__(self, idx: int) -> Tuple[tuple, Tensor, str, str]:
         """
         Returns:
             features (tuple):
             - atom_fea: Tensor(n_i, atom_fea_len)
             - nbr_fea: Tensor(n_i, M, nbr_fea_len)
-            - self_fea_idx: torch.LongTensor(n_i, M)
-            - neighbor_fea_idx: torch.LongTensor(n_i, M)
+            - self_fea_idx: LongTensor(n_i, M)
+            - neighbor_fea_idx: LongTensor(n_i, M)
             target: Tensor(1)
-            comp: str
+            composition: str
             material_id: str
         """
-        material_id, formula, target = self.df.iloc[idx][:3]
+        material_id, composition, target = self.df.iloc[idx][:3]
 
         # NOTE getting primitive structure before constructing graph
         # significantly harms the performance of this model.
-        with gzip.open(f"{self.struct_path}/{material_id}.zip", "rb") as file:
-            crystal = pickle.loads(file.read())
+        crystal = load_struct(f"{self.struct_path}/{material_id}.zip")
 
-        # atom features
-        atom_fea = [atom.specie.symbol for atom in crystal]
-
-        # neighbors
+        # https://pymatgen.org/pymatgen.core.structure.html#pymatgen.core.structure.IStructure.get_neighbor_list
         self_fea_idx, neighbor_fea_idx, _, nbr_fea = crystal.get_neighbor_list(
             self.radius,
             numerical_tol=1e-8,
         )
 
-        nbr_fea = np.array(nbr_fea)
-
         nbr_fea = self.gdf.expand(nbr_fea)
+
+        # atom features
+        atom_fea = [atom.specie.symbol for atom in crystal]
         atom_fea = np.vstack([self.ari.get_fea(atom) for atom in atom_fea])
 
-        atom_fea = torch.Tensor(atom_fea)
-        nbr_fea = torch.Tensor(nbr_fea)
-        self_fea_idx = torch.LongTensor(self_fea_idx)
-        neighbor_fea_idx = torch.LongTensor(neighbor_fea_idx)
+        atom_fea = Tensor(atom_fea)
+        nbr_fea = Tensor(nbr_fea)
+        self_fea_idx = LongTensor(self_fea_idx)
+        neighbor_fea_idx = LongTensor(neighbor_fea_idx)
 
         if self.task == "regression":
-            target = torch.Tensor([float(target)])
+            target = Tensor([float(target)])
         elif self.task == "classification":
-            target = torch.LongTensor([target])
+            target = LongTensor([target])
 
         features = (atom_fea, nbr_fea, self_fea_idx, neighbor_fea_idx)
 
-        return features, target, formula, material_id
+        return features, target, composition, material_id
+
+
+@lru_cache(maxsize=None)  # Cache loaded structures
+def load_struct(zip_path: str) -> Structure:
+    """ Load a zipped Pymatgen structure from zip_path. """
+    with gzip.open(zip_path, "rb") as file:
+        return pickle.loads(file.read())
 
 
 class GaussianDistance:

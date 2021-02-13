@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-import pandas as pd
+from numpy import ndarray as array
 from sklearn.metrics import (
     precision_recall_curve,
     precision_score,
@@ -8,23 +8,9 @@ from sklearn.metrics import (
 )
 
 
-def benchmark_classifier(model, test_loader, out_dir=None):
-    mp_ids, formulas, targets, preds = model.predict(test_loader)
-    preds = preds.softmax(1).numpy()
-    softmax_cols = [f"softmax_{idx}" for idx in range(preds.size(1))]
-
-    df = pd.DataFrame(
-        [mp_ids, formulas, targets.numpy(), *zip(*preds), preds.argmax(-1)],
-        index=["material_id", "formula", "target", *softmax_cols, "pred"],
-    ).T
-
-    df.plot.bar(x="formula", y=["softmax_1", "target"])
-    if out_dir:
-        plt.savefig(out_dir + "/cgcnn_val_preds.png", dpi=200)
-    plt.show()
-
-    fpr, tpr, _ = roc_curve(targets, preds.argmax(1))
-    roc_auc = roc_auc_score(targets, preds.argmax(1))
+def plot_roc(targets: array, proba_pos: array) -> float:
+    fpr, tpr, _ = roc_curve(targets, proba_pos)
+    roc_auc = roc_auc_score(targets, proba_pos)
 
     plt.title("Receiver Operating Characteristic")
     plt.plot(fpr, tpr, "b", label=f"AUC = {roc_auc:.2f}")
@@ -32,16 +18,19 @@ def benchmark_classifier(model, test_loader, out_dir=None):
     plt.plot([0, 1], [0, 1], "r--")
     plt.ylabel("True Positive Rate")
     plt.xlabel("False Positive Rate")
-    plt.show()
 
-    precision, recall, _ = precision_recall_curve(targets, preds.argmax(1))
-    avg_prec = precision_score(targets, preds.argmax(1))
+    return roc_auc
+
+
+def plot_prec(targets: array, proba_pos: array) -> float:
+
+    precision, recall, _ = precision_recall_curve(targets, proba_pos)
+    prec = precision_score(targets, proba_pos.round())  # round: convert probas to preds
 
     plt.title("Precision Recall curve for positive label (1: superconductor)")
-    plt.plot(precision, recall, "b", label=f"average precision = {avg_prec:.2f}")
+    plt.plot(precision, recall, "b", label=f"precision = {prec:.2f}")
     plt.legend(loc="lower left")
     plt.ylabel("Precision")
     plt.xlabel("Recall")
-    plt.show()
 
-    return df, roc_auc, avg_prec
+    return prec
