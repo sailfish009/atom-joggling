@@ -7,7 +7,7 @@ import pandas as pd
 from pymatgen import MPRester
 from tqdm import tqdm
 
-from supercon.data import ROOT
+from supercon.data import ROOT, load_struct
 
 # %%
 # Yunwei's hand-crafted superconductivity dataset
@@ -47,3 +47,9 @@ for dic in tqdm(structures, desc="Saving structures to disk"):
 
     with gzip.open(struct_path, "wb") as file:
         pickle.dump(dic["structure"], file, protocol=-1)
+
+
+# %% test loading a structure from disk
+crystal = load_struct(f"{ROOT}/data/structures/mp-1000.zip")
+
+self_fea_idx, nbr_fea_idx, _, nbr_fea = crystal.get_neighbor_list(r=5)

@@ -82,3 +82,11 @@ parser.add_argument(
 )
 
 parser.add_argument("--out-dir", default="", help="Directory to output the result")
+
+parser.add_argument(
+    "--joggle",
+    default=0,
+    type=int,
+    metavar="N",
+    help="how many Angstroms to randomly perturb atom positions in a crystal",
+)

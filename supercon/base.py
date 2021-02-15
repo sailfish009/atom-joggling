@@ -130,7 +130,17 @@ class BaseModel(nn.Module, ABC):
     def evaluate(
         self, loader, optimizer, action: str = "train", verbose: bool = False
     ) -> dict:
-        """ Evaluate the model for one epoch """
+        """Evaluate the model for one epoch.
+
+        Args:
+            loader (DataLoader): instance of PyTorch DataLoader
+            optimizer (Optimizer): instance of PyTorch Optimizer
+            action (str, optional): 'train' or 'eval'. Defaults to "train".
+            verbose (bool, optional): Whether to display tqdm progress bar. Defaults to False.
+
+        Returns:
+            dict: Model performance metrics (loss + mae, rmse for regr. or acc, f1 for clf.)
+        """
 
         assert action in ["train", "val"], f"action must be train or val, got {action}"
 
@@ -139,7 +149,7 @@ class BaseModel(nn.Module, ABC):
         # records both regr. and clf. metrics for an epoch to compute averages below
         metrics = {key: [] for key in ["loss", "mae", "rmse", "acc", "f1"]}
 
-        # we do not need batch_comp or batch_ids when training
+        # we do not need compositions or material IDs when training
         for input_, target, *_ in tqdm(loader, disable=not verbose, file=sys.stdout):
 
             # compute output

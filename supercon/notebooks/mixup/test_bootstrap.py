@@ -31,7 +31,6 @@ for file in os.listdir("runs/mixup/bootstrap"):
     file = f"runs/mixup/bootstrap/{file}/best_model"
 
     checkpoint = torch.load(file, map_location=torch.device("cpu"))
-    best_acc = checkpoint["best_acc"]
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()  # disables batch norm
 

@@ -31,7 +31,9 @@ if not args.resume and not args.out_dir:
     args.out_dir = out_dir
 
 
-def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tuple:
+def train_with_mixup(
+    labeled_loader, unlabeled_loader, model, optimizer, criterion, verbose=True
+) -> tuple:
     """Train a model with mixup by randomly sampling linear combinations of
     unlabeled and unlabeled inputs as well as targets. Uses model-generated
     pseudo-labels to compute interpolated targets.
@@ -40,8 +42,8 @@ def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tupl
         labeled_loader (torch.utils.data.DataLoader): labeled data
         unlabeled_loader (torch.utils.data.DataLoader): unlabeled data
         model (nn.Module): the instantiated model
-        optimizer (torch.optim): optimizer
-        criterion: loss function that computes total, labeled and unlabeled losses
+        optimizer (torch.optim.Optimizer): optimizer
+        criterion: loss function that computes labeled, unlabeled and combined losses
 
     Returns:
         [loss, Lx, Lu]: 3-tuple of total, labeled and unlabeled losses
@@ -52,7 +54,11 @@ def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tupl
     unlabeled_train_iter = iter(unlabeled_loader)
 
     model.train()
-    for _ in trange(args.train_iterations, desc="Batches:", file=sys.stdout):
+    # file=sys.stdout (default stderr) prevents print order issues by using
+    # same stream as print https://stackoverflow.com/a/45265707
+    for _ in trange(
+        args.train_iterations, desc="Batches:", file=sys.stdout, disable=not verbose
+    ):
         try:
             inputs_x, targets_x, *_ = next(labeled_train_iter)
         except StopIteration:
@@ -134,7 +140,7 @@ def train(labeled_loader, unlabeled_loader, model, optimizer, criterion) -> tupl
 
 
 @torch.no_grad()
-def validate(val_loader, model, criterion) -> tuple:
+def validate_mixup(val_loader, model, criterion) -> tuple:
 
     losses, avg_acc = [], []
 

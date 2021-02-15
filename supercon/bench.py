@@ -28,7 +28,7 @@ def plot_prec(targets: array, proba_pos: array) -> float:
     prec = precision_score(targets, proba_pos.round())  # round: convert probas to preds
 
     plt.title("Precision Recall curve for positive label (1: superconductor)")
-    plt.plot(precision, recall, "b", label=f"precision = {prec:.2f}")
+    plt.plot(recall, precision, "b", label=f"precision = {prec:.2f}")
     plt.legend(loc="lower left")
     plt.ylabel("Precision")
     plt.xlabel("Recall")

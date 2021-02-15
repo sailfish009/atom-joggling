@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
-from supercon.mixup import SemiLoss, args, train, validate
+from supercon.mixup import SemiLoss, args, train_with_mixup, validate_mixup
 from supercon.utils import mean, save_checkpoint
 
 # %%
@@ -100,11 +100,11 @@ for fold, (train_idx, test_idx) in enumerate(kfold.split(labeled_df), 1):
 
         print(f"\nEpoch: {epoch + 1}/{args.epochs}")
 
-        train_loss, train_loss_x, train_loss_u, u_ramp = train(
+        train_loss, train_loss_x, train_loss_u, u_ramp = train_with_mixup(
             labeled_loader, unlabeled_loader, model, optimizer, train_criterion
         )
-        _, train_acc = validate(labeled_loader, model, criterion)
-        test_loss, test_acc = validate(test_loader, model, criterion)
+        _, train_acc = validate_mixup(labeled_loader, model, criterion)
+        test_loss, test_acc = validate_mixup(test_loader, model, criterion)
 
         writer.add_scalar("losses/train_loss", train_loss, epoch)
         writer.add_scalar("losses/train_loss_x", train_loss_x, epoch)

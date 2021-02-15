@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
-from supercon.mixup import SemiLoss, args, train, validate
+from supercon.mixup import SemiLoss, args, train_with_mixup, validate_mixup
 from supercon.utils import save_checkpoint
 
 # %%
@@ -36,6 +36,7 @@ print(f"- Using CUDA: {(use_cuda := torch.cuda.is_available())}")
 print(f"- Batch size: {args.batch_size:,d}")
 print(f"- Train iterations per epoch: {args.train_iterations:,d}")
 print(f"- Output directory: {out_dir}")
+print(f"- Verbose: {(verbose := args.verbose)}")
 
 labeled_set = CrystalGraphData(train_df, task)
 unlabeled_set = CrystalGraphData(unlabeled_df, task)
@@ -87,10 +88,10 @@ for epoch in range(start_epoch, args.epochs):
 
     print(f"\nEpoch: {epoch + 1}/{args.epochs}")
 
-    train_loss, train_loss_x, train_loss_u, u_ramp = train(
-        labeled_loader, unlabeled_loader, model, optimizer, criterion
+    train_loss, train_loss_x, train_loss_u, u_ramp = train_with_mixup(
+        labeled_loader, unlabeled_loader, model, optimizer, criterion, verbose
     )
-    _, train_acc = validate(labeled_loader, model, val_criterion)
+    _, train_acc = validate_mixup(labeled_loader, model, val_criterion)
 
     writer.add_scalar("losses/train_loss", train_loss, epoch)
     writer.add_scalar("losses/train_loss_x", train_loss_x, epoch)
