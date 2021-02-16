@@ -1,6 +1,4 @@
-import gzip
 import json
-import pickle
 from functools import lru_cache
 from os.path import abspath, dirname, exists
 from typing import Iterable, Tuple
@@ -91,7 +89,7 @@ class CrystalGraphData(Dataset):
         # constructing the structure graph as the graph of the primitive cell
         # encodes the system without loss, but in practice this seems to cause
         # weird bugs in Pymatgen
-        crystal = load_struct(f"{self.struct_path}/{material_id}.zip")
+        crystal = load_struct(f"{self.struct_path}/{material_id}.cif")
 
         # https://pymatgen.org/pymatgen.core.structure.html#pymatgen.core.structure.IStructure.get_neighbor_list
         # get_neighbor_list returns: center_indices, points_indices, offset_vectors, distances
@@ -124,10 +122,9 @@ class CrystalGraphData(Dataset):
 
 
 @lru_cache(maxsize=None)  # Cache loaded structures
-def load_struct(zip_path: str) -> Structure:
-    """ Load a zipped Pymatgen structure from zip_path. """
-    with gzip.open(zip_path, "rb") as file:
-        return pickle.loads(file.read())
+def load_struct(filepath: str) -> Structure:
+    """ Load a Pymatgen structure (in CIF format) from disk. """
+    return Structure.from_file(filepath)
 
 
 class GaussianDistance:
