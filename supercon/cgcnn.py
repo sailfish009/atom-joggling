@@ -15,23 +15,23 @@ class CGCNN(BaseModel):
 
     This model is based on: https://github.com/txie-93/cgcnn (MIT License).
     Changes to the code were made to allow for the removal of zero-padding
-    and to benefit from the BaseModel functionality. The architectural
-    choices of the model remain unchanged.
+    and to inherit from the BaseModel class. The architectural
+    choices of the model remain largely unchanged.
     """
 
     def __init__(
         self,
-        task,
-        robust,
-        elem_emb_len,
-        nbr_fea_len,
-        n_targets,
-        elem_fea_len=64,
-        n_graph=4,
-        h_fea_len=128,
-        n_hidden=1,
+        task: str,
+        robust: bool,
+        elem_emb_len: int,
+        nbr_fea_len: int,
+        n_targets: int,
+        elem_fea_len: int = 64,
+        n_graph: int = 4,
+        h_fea_len: int = 128,
+        n_hidden: int = 1,
         **kwargs,
-    ):
+    ) -> None:
         """
         Args:
             task (str): regression or classification
@@ -77,32 +77,23 @@ class CGCNN(BaseModel):
 
     def forward(
         self, atom_fea, nbr_fea, atom_indices, neighbor_indices, crystal_atom_idx
-    ):
-        """
-        Forward pass
+    ) -> Tensor:
+        """Forward pass through CGCNN.
 
-        N: Total number of atoms in the batch
-        M: Max number of neighbors
-        N0: Total number of crystals in the batch
+        Args (see collate_batch):
+            atom_fea (Tensor of shape [N, elem_fea_len]):
+                Atom features from element type.
+            nbr_fea (Tensor of shape [N, M, nbr_fea_len]):
+                Bond features of each atom's M neighbors.
+            atom_indices (LongTensor of shape [N, M]):
+                Indices enumerating each atom in the batch.
+            neighbor_indices (Tensor of shape [N, M]):
+                Indices of M neighbors of each atom.
+            crystal_atom_idx (Tensor): list of LongTensors of length N_0
+                mapping from crystal index to atom index.
 
-        Parameters
-        ----------
-
-        atom_fea: Variable(torch.Tensor) shape (N, elem_fea_len)
-            Atom features from atom type
-        nbr_fea: Variable(torch.Tensor) shape (N, M, nbr_fea_len)
-            Bond features of each atom's M neighbors
-        neighbor_indices: torch.LongTensor shape (N, M)
-            Indices of M neighbors of each atom
-        crystal_atom_idx: list of torch.LongTensor of length N0
-            Mapping from the crystal idx to atom idx
-
-        Returns
-        -------
-
-        prediction: nn.Variable shape (N, )
-            Atom hidden features after convolution
-
+        Returns:
+            Tensor of shape [N]: Atomic Atom hidden features after convolution
         """
         crys_fea = self.material_nn(
             atom_fea, nbr_fea, atom_indices, neighbor_indices, crystal_atom_idx
@@ -113,7 +104,7 @@ class CGCNN(BaseModel):
 
 
 class ConvLayer(nn.Module):
-    """ Convolutional operation on graphs """
+    """ Performs a 'convolution' on crystal graphs """
 
     def __init__(self, elem_fea_len: int, nbr_fea_len: int) -> None:
         """
@@ -124,22 +115,21 @@ class ConvLayer(nn.Module):
         super().__init__()
         self.elem_fea_len = elem_fea_len
         self.nbr_fea_len = nbr_fea_len
-        self.fc_full = nn.Linear(
-            2 * self.elem_fea_len + self.nbr_fea_len, 2 * self.elem_fea_len
-        )
-        self.bn1 = nn.BatchNorm1d(2 * self.elem_fea_len)
-        self.bn2 = nn.BatchNorm1d(self.elem_fea_len)
+
+        self.fc_full = nn.Linear(2 * elem_fea_len + nbr_fea_len, 2 * elem_fea_len)
+        self.bn1 = nn.BatchNorm1d(2 * elem_fea_len)
+        self.bn2 = nn.BatchNorm1d(elem_fea_len)
 
     def forward(self, atom_in_fea, nbr_fea, atom_indices, neighbor_indices) -> Tensor:
         """Forward pass through the ConvLayer.
 
-        Args:
+        Args (see collate_batch):
             atom_in_fea (Tensor of shape [N, elem_fea_len]):
                 Atomic features before convolution.
             nbr_fea (Tensor of shape [N, M, nbr_fea_len]):
                 Bond features of each atom's M neighbors.
             atom_indices (LongTensor of shape [N, M]):
-                Indices enumerating each atom in the crystal.
+                Indices enumerating each atom in the batch.
             neighbor_indices (LongTensor of shape [N, M]):
                 Indices of the M neighbors of each atom.
 
@@ -164,10 +154,10 @@ class ConvLayer(nn.Module):
 
         # take the element-wise product of the filter and core
         nbr_msg = filter_fea * core_fea
-        nbr_sumed = scatter_add(nbr_msg, atom_indices, dim=0)  # sum pooling
+        nbr_summed = scatter_add(nbr_msg, atom_indices, dim=0)  # sum pooling
 
-        nbr_sumed = self.bn2(nbr_sumed)
-        out = softplus(atom_in_fea + nbr_sumed)
+        nbr_summed = self.bn2(nbr_summed)
+        out = softplus(atom_in_fea + nbr_summed)
 
         return out
 
@@ -195,13 +185,13 @@ class DescriptorNet(nn.Module):
     ) -> Tensor:
         """Forward pass through the DescriptorNet.
 
-        Args:
+        Args (see collate_batch):
             atom_fea (Tensor of shape [N, elem_fea_len]):
                 Atom features from element type.
             nbr_fea (Tensor of shape [N, M, nbr_fea_len]):
                 Bond features of each atom's M neighbors.
             atom_indices (LongTensor of shape [N, M]):
-                Indices enumerating each atom in the crystal.
+                Indices enumerating each atom in the batch.
             neighbor_indices (LongTensor of shape [N, M]):
                 Indices of the M neighbors of each atom.
             crystal_atom_idx (LongTensor of shape [N_0]):

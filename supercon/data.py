@@ -89,7 +89,7 @@ class CrystalGraphData(Dataset):
         # constructing the structure graph as the graph of the primitive cell
         # encodes the system without loss, but in practice this seems to cause
         # weird bugs in Pymatgen
-        crystal = load_struct(f"{self.struct_path}/{material_id}.cif")
+        crystal = load_struct(f"{self.struct_path}/{material_id}.json")
 
         # https://pymatgen.org/pymatgen.core.structure.html#pymatgen.core.structure.IStructure.get_neighbor_list
         # get_neighbor_list returns: center_indices, points_indices, offset_vectors, distances
