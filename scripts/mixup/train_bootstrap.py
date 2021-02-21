@@ -74,7 +74,7 @@ if args.resume:
     print("==> Resuming from checkpoint..")
     assert os.path.isfile(args.resume), "Error: checkpoint file not found!"
     out_dir = os.path.dirname(args.resume)
-    checkpoint = torch.load(args.resume)
+    checkpoint = torch.load(args.resume, map_location="cuda" if use_cuda else "cpu")
     best_acc = checkpoint["best_acc"]
     start_epoch = checkpoint["epoch"]
     model.load_state_dict(checkpoint["state_dict"])

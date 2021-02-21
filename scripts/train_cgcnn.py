@@ -27,7 +27,7 @@ print(f"- Verbose: {(verbose := args.verbose)}")
 print(f"- Joggle: {(joggle := args.joggle)}")
 
 csv_name = os.path.splitext(args.csv_path)[0].split(os.sep)[-1]
-default_dir = f"{ROOT}/runs/cgcnn/{task}/{csv_name}-{epochs=}-{batch_size=}-{joggle=}"
+default_dir = f"{ROOT}/runs/cgcnn/{task}/{csv_name}/{epochs=}-{batch_size=}-{joggle=}"
 print(f"- Output directory: {(out_dir := args.out_dir or default_dir)}\n")
 
 loader_args = {

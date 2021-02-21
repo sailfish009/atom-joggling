@@ -10,6 +10,7 @@ from supercon.mixup import args
 
 # %%
 task = "classification"
+use_cuda = torch.cuda.is_available()
 
 df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)
@@ -30,7 +31,7 @@ for file in os.listdir("runs/mixup/bootstrap"):
     mp_id = file.replace("_left_out", "")
     file = f"runs/mixup/bootstrap/{file}/best_model"
 
-    checkpoint = torch.load(file, map_location=torch.device("cpu"))
+    checkpoint = torch.load(file, map_location="cuda" if use_cuda else "cpu")
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()  # disables batch norm
 

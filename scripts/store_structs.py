@@ -25,9 +25,7 @@ mp_ids = {*df.index}
 
 # %%
 # Materials Project API keys available at https://materialsproject.org/dashboard.
-API_KEY = "X2UaF2zkPMcFhpnMN"
-
-with MPRester(API_KEY) as mp:
+with MPRester(api_key="X2UaF2zkPMcFhpnMN") as mp:
     # mp.query performs the actual API call
     structures = mp.query(
         {"material_id": {"$in": list(mp_ids)}}, ["material_id", "structure"]

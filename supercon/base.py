@@ -23,7 +23,6 @@ class BaseModel(nn.Module, ABC):
         self.robust = robust
         self.epoch = epoch
         self.best_val_score = None
-        self.val_score_name = "MAE" if task == "regression" else "Acc"
         self.model_params = {}
         self.checkpoint_dir = checkpoint_dir
         if task == "classification":
@@ -93,7 +92,6 @@ class BaseModel(nn.Module, ABC):
                     "state_dict": self.state_dict(),
                     "epoch": self.epoch,
                     "best_val_score": self.best_val_score,
-                    "val_score_name": self.val_score_name,
                     "optimizer": optimizer.state_dict(),
                 }
 
@@ -229,17 +227,13 @@ class BaseModel(nn.Module, ABC):
 
 
 def RobustL1Loss(output, log_std, target) -> float:
-    """Robust L1 loss using a Lorentzian prior.
-    Allows for aleatoric uncertainty estimation.
-    """
+    """ Robust L1 loss using a Lorentzian prior with aleatoric uncertainty estimation. """
     loss = 2 ** 0.5 * (output - target).abs() / log_std.exp() + log_std
     return loss.mean()
 
 
 def RobustL2Loss(output, log_std, target) -> float:
-    """Robust L2 loss using a gaussian prior.
-    Allows for aleatoric uncertainty estimation.
-    """
+    """ Robust L2 loss using a Gaussian prior with aleatoric uncertainty estimation. """
     loss = 0.5 * (output - target) ** 2 / (2 * log_std).exp() + log_std
     return loss.mean()
 
