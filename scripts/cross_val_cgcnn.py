@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+from mlmatrics import density_scatter, precision_recall_curve, roc_curve
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.bench import plot_prec, plot_roc
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
 from supercon.utils import mean, parser
@@ -134,10 +134,10 @@ if task == "classification":
         plt.savefig(out_dir + "/cgcnn_val_preds.png", dpi=200, bbox_inches="tight")
         plt.close()
 
-    roc_auc = plot_roc(out_df.target, out_df.softmax_1)
+    roc_auc, _ = roc_curve(out_df.target, out_df.softmax_1)
     plt.savefig(out_dir + "/roc_auc_curve.png", dpi=200, bbox_inches="tight")
     plt.close()
-    prec = plot_prec(out_df.target, out_df.softmax_1)
+    prec, _ = precision_recall_curve(out_df.target, out_df.softmax_1)
     plt.savefig(out_dir + "/precision_recall_curve.png", dpi=200, bbox_inches="tight")
     plt.close()
 
@@ -149,3 +149,5 @@ if task == "classification":
 else:  # regression
     print(f"mean untrained MAE: {untrained_perf_str}")
     print(f"mean test MAE: {test_perf_str}")
+
+    density_scatter(out_df.target, out_df.pred)

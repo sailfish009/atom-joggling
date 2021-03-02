@@ -4,11 +4,11 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import torch
+from mlmatrics import density_scatter, precision_recall_curve, roc_curve
 from sklearn.model_selection import train_test_split as split
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.bench import plot_prec, plot_roc
 from supercon.cgcnn import CGCNN
 from supercon.data import ROOT, CrystalGraphData, collate_batch
 from supercon.utils import parser
@@ -89,34 +89,34 @@ if task == "classification":
     for idx, arr in enumerate(preds.softmax(dim=1).numpy().T):
         out_df[f"softmax_{idx}"] = arr
 
-    test_acc = (targets == preds.argmax(dim=1)).float().mean()
-    print(f"test accuracy: {test_acc:.3f}")
-
 else:  # regression
     if model.robust:
         preds, log_std = preds.chunk(2, dim=1)
         out_df["std"] = log_std.exp()
     out_df["pred"] = preds
 
-    test_mae = (targets - preds).abs().mean()
-    print(f"test MAE: {test_mae:.3f}")
 
-
-# %%
 out_df.to_csv(f"{out_dir}/output.csv", index=False)
 
 
+# %%
+out_df = pd.read_csv(f"{out_dir}/output.csv")
+
+
 if task == "classification":
+
+    test_acc = (targets == preds.argmax(dim=1)).float().mean()
+    print(f"test accuracy: {test_acc:.3f}")
 
     if len(out_df) < 100:
         out_df.plot.bar(x="formula", y=["softmax_1", "target"], figsize=[18, 8])
         plt.savefig(out_dir + "/cgcnn_val_preds.png", dpi=200, bbox_inches="tight")
         plt.close()
 
-    roc_auc = plot_roc(out_df.target, out_df.softmax_1)
+    roc_auc, _ = roc_curve(out_df.target, out_df.softmax_1)
     plt.savefig(out_dir + "/roc_auc_curve.png", dpi=200, bbox_inches="tight")
     plt.close()
-    prec = plot_prec(out_df.target, out_df.softmax_1)
+    prec, _ = precision_recall_curve(out_df.target, out_df.softmax_1)
     plt.savefig(out_dir + "/precision_recall_curve.png", dpi=200, bbox_inches="tight")
     plt.close()
 
@@ -124,4 +124,8 @@ if task == "classification":
     print(f"mean precisions: {prec:.3g}")
 
 else:  # regression
-    pass
+
+    test_mae = (targets - preds).abs().mean()
+    print(f"test MAE: {test_mae:.3f}")
+
+    density_scatter(out_df.target, out_df.pred)
