@@ -4,9 +4,9 @@ import os
 import pandas as pd
 import torch
 
-from supercon.cgcnn import CGCNN
-from supercon.data import ROOT, CrystalGraphData, collate_batch
+from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
 from supercon.mixup import args
+from supercon.utils import ROOT
 
 # %%
 task = "classification"

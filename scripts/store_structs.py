@@ -8,7 +8,7 @@ import pandas as pd
 from pymatgen import MPRester, Structure
 from tqdm import tqdm
 
-from supercon.data import ROOT
+from supercon.utils import ROOT
 
 # %%
 # Yunwei's hand-crafted superconductivity dataset

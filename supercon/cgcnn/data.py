@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from os.path import abspath, dirname, exists
+from os.path import exists
 from typing import Iterable, Tuple
 
 import numpy as np
@@ -10,8 +10,7 @@ from pymatgen import Structure
 from torch import LongTensor, Tensor
 from torch.utils.data import Dataset
 
-# absolute path to the project's root directory
-ROOT = dirname(dirname(abspath(__file__)))
+from supercon.utils import ROOT
 
 
 class CrystalGraphData(Dataset):

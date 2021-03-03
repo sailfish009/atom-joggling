@@ -8,10 +8,9 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.cgcnn import CGCNN
-from supercon.data import ROOT, CrystalGraphData, collate_batch
+from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
 from supercon.mixup import SemiLoss, args, train_with_mixup, validate_mixup
-from supercon.utils import mean, save_checkpoint
+from supercon.utils import ROOT, mean, save_checkpoint
 
 # %%
 best_accs, mean_accs = [], []

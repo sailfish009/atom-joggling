@@ -9,9 +9,8 @@ from sklearn.model_selection import train_test_split as split
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.cgcnn import CGCNN
-from supercon.data import ROOT, CrystalGraphData, collate_batch
-from supercon.utils import parser
+from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
+from supercon.utils import ROOT, parser
 
 # %%
 args, _ = parser.parse_known_args()

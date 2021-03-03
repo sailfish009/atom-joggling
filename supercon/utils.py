@@ -1,7 +1,12 @@
 import argparse
+from os.path import abspath, dirname
 
 import numpy as np
 import torch
+
+# absolute path to the project's root directory
+ROOT = dirname(dirname(abspath(__file__)))
+
 
 # ensure reproducible results
 np.random.seed(0)

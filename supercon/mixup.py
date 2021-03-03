@@ -4,8 +4,7 @@ import numpy as np
 import torch
 from tqdm import trange
 
-from supercon.data import ROOT
-from supercon.utils import mean, parser
+from supercon.utils import ROOT, mean, parser
 
 # Method specific options
 
