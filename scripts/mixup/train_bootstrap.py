@@ -1,9 +1,10 @@
 # submitted as CSD3 array job with:
 # sbatch -J supercon_bootstrap -t 0:10:0 --array 0-85
-# --export CMD="python supercon/notebooks/train_bootstrap.py
+# --export CMD="python atom_joggling/notebooks/train_bootstrap.py
 #   --epoch 10 --out-dir runs/mixup/bootstrap
 #   --bootstrap-idx \$SLURM_ARRAY_TASK_ID"
 # hpc/gpu_submit
+
 
 # %%
 import os
@@ -14,12 +15,18 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
-from supercon.mixup import SemiLoss, args, train_with_mixup, validate_mixup
-from supercon.utils import ROOT, save_checkpoint
+from atom_joggling.cgcnn import CGCNN, CrystalGraphData, collate_batch
+from atom_joggling.mixup import (
+    SemiLoss,
+    args,
+    train_with_mixup,
+    validate_mixup,
+)
+from atom_joggling.utils import ROOT, save_checkpoint
+
 
 # %%
-df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
+df = pd.read_csv(f"{ROOT}/data/atom_joggling/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)
 unlabeled_df = df[df.label == -1].reset_index(drop=True)
 

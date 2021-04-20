@@ -9,11 +9,11 @@ from torch.nn import CrossEntropyLoss, L1Loss, NLLLoss
 from torch.nn.functional import softmax
 from tqdm import tqdm, trange
 
-from supercon.utils import save_checkpoint
+from atom_joggling.utils import save_checkpoint
 
 
 class BaseModel(nn.Module, ABC):
-    """ A base class for regression and classification models. """
+    """A base class for regression and classification models."""
 
     def __init__(
         self, task: str, robust: bool, epoch: int = 1, checkpoint_dir: str = None
@@ -193,29 +193,28 @@ class BaseModel(nn.Module, ABC):
 
     @torch.no_grad()
     def predict(self, loader, verbose: bool = False) -> tuple:
-        """ Generate predictions """
+        """Generate predictions"""
 
-        material_ids, formulas, targets, outputs = [], [], [], []
+        targets, outputs, rest = [], [], []
 
         # Ensure model is in evaluation mode
         self.eval()
 
         # iterate over mini-batches
-        for features, targs, comps, ids in tqdm(loader, disable=not verbose):
+        for features, targs, *other in tqdm(loader, disable=not verbose):
 
             # compute output
             output = self(*features)
 
             # collect the model outputs
-            material_ids += ids
-            formulas += comps
+            rest += zip(*other)
             targets.append(targs)
             outputs.append(output)
 
         targets = torch.cat(targets, dim=0).cpu()
         outputs = torch.cat(outputs, dim=0).cpu()
 
-        return material_ids, formulas, targets, outputs
+        return *rest, targets, outputs
 
     @abstractmethod
     def forward(self, *inputs):
@@ -227,13 +226,13 @@ class BaseModel(nn.Module, ABC):
 
 
 def RobustL1Loss(output, log_std, target) -> float:
-    """ Robust L1 loss using a Lorentzian prior with aleatoric uncertainty estimation. """
+    """Robust L1 loss using a Lorentzian prior with aleatoric uncertainty estimation."""
     loss = 2 ** 0.5 * (output - target).abs() / log_std.exp() + log_std
     return loss.mean()
 
 
 def RobustL2Loss(output, log_std, target) -> float:
-    """ Robust L2 loss using a Gaussian prior with aleatoric uncertainty estimation. """
+    """Robust L2 loss using a Gaussian prior with aleatoric uncertainty estimation."""
     loss = 0.5 * (output - target) ** 2 / (2 * log_std).exp() + log_std
     return loss.mean()
 

@@ -4,6 +4,7 @@ from os.path import abspath, dirname
 import numpy as np
 import torch
 
+
 # absolute path to the project's root directory
 ROOT = dirname(dirname(abspath(__file__)))
 
@@ -29,10 +30,11 @@ parser.add_argument(
     "-t", "--task", choices=("regression", "classification"), default="classification"
 )
 parser.add_argument(
-    "--csv-path",
-    default="data/supercon/labeled.csv",
+    "--data-path",
+    default="data/atom_joggling/labeled.csv",
     help="Relative path to CSV file with training data",
 )
+parser.add_argument("--target", help="Name(s) of the dataframe target column(s)")
 parser.add_argument(
     "-e", "--epochs", type=int, default=10, help="number of epochs to run"
 )
@@ -42,6 +44,7 @@ parser.add_argument(
     default=0,
     help="manual starting epoch (useful on restarts)",
 )
+parser.add_argument("--batch-size", type=int, default=128, help="training batch size")
 parser.add_argument(
     "--bootstrap-idx",
     type=int,

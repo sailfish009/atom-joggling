@@ -4,15 +4,16 @@ import os
 import pandas as pd
 import torch
 
-from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
-from supercon.mixup import args
-from supercon.utils import ROOT
+from atom_joggling.cgcnn import CGCNN, CrystalGraphData, collate_batch
+from atom_joggling.mixup import args
+from atom_joggling.utils import ROOT
+
 
 # %%
 task = "classification"
 use_cuda = torch.cuda.is_available()
 
-df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
+df = pd.read_csv(f"{ROOT}/data/atom_joggling/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)
 
 labeled_set = CrystalGraphData(labeled_df, task)
@@ -23,6 +24,7 @@ nbr_fea_len = labeled_set.nbr_fea_len
 model = CGCNN(task, args.robust, elem_emb_len, nbr_fea_len, n_targets=2)
 
 id_to_idx_map = {val: key for key, val in labeled_df.material_id.to_dict().items()}
+
 
 # %%
 results = []

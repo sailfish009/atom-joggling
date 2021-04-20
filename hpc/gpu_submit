@@ -34,7 +34,7 @@ module purge                               # Removes all modules still loaded
 module load rhel7/default-gpu              # REQUIRED - loads the basic environment
 
 #! --- Single Job ---
-#! sbatch -J jobname -t 0:10:0 --export CMD="python path/to/script.py --epochs 1" hpc/cpu_submit
+#! sbatch -J jobname -t 0:10:0 --export CMD="python path/to/script.py --epochs 1" hpc/gpu_submit
 
 # --- Array Job ---
 #! sbatch -J jobname -t 1:0:0 --array 0-15 --export CMD="python path/to/script.py --epoch 10 --data-seed \$SLURM_ARRAY_TASK_ID" hpc/gpu_submit

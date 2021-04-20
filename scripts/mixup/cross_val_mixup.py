@@ -8,9 +8,15 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
-from supercon.mixup import SemiLoss, args, train_with_mixup, validate_mixup
-from supercon.utils import ROOT, mean, save_checkpoint
+from atom_joggling.cgcnn import CGCNN, CrystalGraphData, collate_batch
+from atom_joggling.mixup import (
+    SemiLoss,
+    args,
+    train_with_mixup,
+    validate_mixup,
+)
+from atom_joggling.utils import ROOT, mean, save_checkpoint
+
 
 # %%
 best_accs, mean_accs = [], []
@@ -20,7 +26,7 @@ use_cuda = torch.cuda.is_available()
 # Data
 task = "classification"
 
-df = pd.read_csv(f"{ROOT}/data/supercon/combined.csv").drop(columns=["class"])
+df = pd.read_csv(f"{ROOT}/data/atom_joggling/combined.csv").drop(columns=["class"])
 labeled_df = df[df.label >= 0].reset_index(drop=True)
 unlabeled_df = df[df.label == -1].reset_index(drop=True)
 n_splits = 5
@@ -137,6 +143,7 @@ for fold, (train_idx, test_idx) in enumerate(kfold.split(labeled_df), 1):
     print(f"Mean acc: {mean(test_accs[-20:]):.3g}")
     mean_accs.append(mean(test_accs[-20:]))
     best_accs.append(best_acc)
+
 
 # %%
 print(f"{n_splits}-fold split results")

@@ -5,15 +5,16 @@ import time
 
 import nglview as nv
 import pandas as pd
-from pymatgen import MPRester, Structure
+from pymatgen.ext.matproj import MPRester, Structure
 from tqdm import tqdm
 
-from supercon.utils import ROOT
+from atom_joggling.utils import ROOT
+
 
 # %%
 # Yunwei's hand-crafted superconductivity dataset
-df_labeled = pd.read_csv(f"{ROOT}/data/supercon/labeled.csv")
-df_unlabeled = pd.read_csv(f"{ROOT}/data/supercon/unlabeled.csv")
+df_labeled = pd.read_csv(f"{ROOT}/data/atom_joggling/labeled.csv")
+df_unlabeled = pd.read_csv(f"{ROOT}/data/atom_joggling/unlabeled.csv")
 # Rhys' larger polymorph formation energy dataset
 # (originally compiled to compare Wren with CGCNN)
 df_mp_p = pd.read_csv(f"{ROOT}/data/e_formation/mp-polymorphs-spglib.csv")
@@ -51,6 +52,7 @@ for dic in tqdm(structures, desc="Saving structures to disk"):
     crystal = dic["structure"]
     crystal.to(filename=struct_path)
 
+
 # %% Check if running python interactively. If so, load a structure from disk and plot it.
 if hasattr(builtins, "__IPYTHON__"):
     crystal = Structure.from_file(f"{ROOT}/data/structures/mp-1000.json")
@@ -60,6 +62,7 @@ if hasattr(builtins, "__IPYTHON__"):
     crystal.make_supercell([4, 4, 4])
     view = nv.show_pymatgen(crystal)
     view.add_unitcell()
+    crystal.get_primitive_structure()
     view
 
 

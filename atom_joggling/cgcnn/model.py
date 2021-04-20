@@ -6,7 +6,7 @@ from torch.nn.functional import softplus
 from torch_scatter import scatter_add
 from torch_scatter.scatter import scatter_mean
 
-from supercon.base import BaseModel
+from atom_joggling.base import BaseModel
 
 
 class CGCNN(BaseModel):
@@ -104,7 +104,7 @@ class CGCNN(BaseModel):
 
 
 class ConvLayer(nn.Module):
-    """ Performs a 'convolution' on crystal graphs """
+    """Performs a 'convolution' on crystal graphs"""
 
     def __init__(self, elem_fea_len: int, nbr_fea_len: int) -> None:
         """
@@ -163,7 +163,7 @@ class ConvLayer(nn.Module):
 
 
 class DescriptorNet(nn.Module):
-    """ DescriptorNet is the message passing section of CGCNN. """
+    """DescriptorNet is the message passing section of CGCNN."""
 
     def __init__(
         self,
@@ -219,7 +219,7 @@ class DescriptorNet(nn.Module):
 
 
 class SimpleNet(nn.Module):
-    """ Simple fully-connected neural net """
+    """Simple fully-connected neural net"""
 
     def __init__(self, dims: List[int], activation=nn.LeakyReLU) -> None:
         super().__init__()

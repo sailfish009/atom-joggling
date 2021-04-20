@@ -4,18 +4,31 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import torch
-from mlmatrics import density_scatter, precision_recall_curve, roc_curve
+from matminer.utils.io import load_dataframe_from_json
+from ml_matrics import density_scatter, precision_recall_curve, roc_curve
 from sklearn.model_selection import train_test_split as split
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
-from supercon.utils import ROOT, parser
+from atom_joggling.cgcnn import CGCNN, CrystalGraphData, collate_batch
+from atom_joggling.utils import ROOT, parser
+
 
 # %%
-args, _ = parser.parse_known_args()
+args, _ = parser.parse_known_args(
+    [
+        "--data-path",
+        "data/matbench/log_gvrh.json.gz",
+        "--target",
+        "log10(G_VRH)",
+        "--task",
+        "regression",
+    ]
+)
 
-data_df = pd.read_csv(f"{ROOT}/{args.csv_path}").iloc[:, 0:3]
+
+# data_df = pd.read_csv(f"{ROOT}/{args.data_path}").iloc[:, 0:3]
+data_df = load_dataframe_from_json(f"{ROOT}/{args.data_path}")
 
 print(f"\n- Task: {(task := args.task)}")
 print(f"- Using CUDA: {(use_cuda := torch.cuda.is_available())}")
@@ -24,9 +37,10 @@ print(f"- Epochs: {(epochs := args.epochs):,d}")
 print(f"- Number of samples: {len(data_df):,d}")
 print(f"- Verbose: {(verbose := args.verbose)}")
 print(f"- Joggle: {(joggle := args.joggle)}")
+print(f"- {(target_cols := args.target)=}")
 
-csv_name = os.path.splitext(args.csv_path)[0].split(os.sep)[-1]
-default_dir = f"{ROOT}/runs/cgcnn/{task}/{csv_name}/{epochs=}-{batch_size=}-{joggle=}"
+data_name = os.path.splitext(args.data_path)[0].split(os.sep)[-1]
+default_dir = f"{ROOT}/runs/cgcnn/{task}/{data_name}/{epochs=}-{batch_size=}-{joggle=}"
 print(f"- Output directory: {(out_dir := args.out_dir or default_dir)}\n")
 
 loader_args = {
@@ -34,24 +48,25 @@ loader_args = {
     "collate_fn": lambda batch: collate_batch(batch, use_cuda),
 }
 
-targets = data_df.iloc[:, 2]
+targets = data_df[target_cols]
 if task == "classification":
     print(f"dummy accuracy: {targets.mean():.3f}")
 else:  # regression
     print(f"dummy MAE: {(targets - targets.mean()).abs().mean():.3f}")
 
+
 # %%
 train_df, test_df = split(data_df, test_size=0.2, random_state=0)
 
-train_set = CrystalGraphData(train_df, task, joggle=joggle)
-test_set = CrystalGraphData(test_df, task)
+train_set = CrystalGraphData(task, train_df, target_cols, joggle=joggle, identifiers=[])
+test_set = CrystalGraphData(task, test_df, target_cols, identifiers=[])
 
 model = CGCNN(
     task,
     args.robust,
     train_set.elem_emb_len,
     train_set.nbr_fea_len,
-    n_targets=train_set.n_targets,
+    n_targets=targets.max() + 1 if task == "classification" else 1,
     checkpoint_dir=out_dir,
 )
 
@@ -66,14 +81,14 @@ test_loader = DataLoader(test_set, **loader_args)
 writer = SummaryWriter(out_dir)
 
 # sanity check: test untrained model performance
-_, _, targets, outputs = model.predict(test_loader, verbose=verbose)
+*_, targets, outputs = model.predict(test_loader, verbose=verbose)
 
 if task == "classification":
     untrained_acc = (targets == outputs.argmax(dim=1)).float().mean()
     print(f"untrained accuracy: {untrained_acc:.3f}")
 else:  # regression
     untrained_mae = (targets - outputs).abs().mean()
-    print(f"untrained MAE: {untrained_mae:.3f}")
+    print(f"untrained MAE: {untrained_mae:.3f}", flush=True)
 
 model.fit(train_loader, test_loader, optimizer, epochs, writer, verbose=verbose)
 

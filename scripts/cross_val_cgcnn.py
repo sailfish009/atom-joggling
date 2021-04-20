@@ -5,18 +5,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from mlmatrics import density_scatter, precision_recall_curve, roc_curve
+from ml_matrics import density_scatter, precision_recall_curve, roc_curve
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from supercon.cgcnn import CGCNN, CrystalGraphData, collate_batch
-from supercon.utils import ROOT, mean, parser
+from atom_joggling.cgcnn import CGCNN, CrystalGraphData, collate_batch
+from atom_joggling.utils import ROOT, mean, parser
+
 
 # %%
 args, _ = parser.parse_known_args()
 
-data_df = pd.read_csv(f"{ROOT}/{args.csv_path}").iloc[:, 0:3]
+data_df = pd.read_csv(f"{ROOT}/{args.data_path}").iloc[:, 0:3]
 
 n_splits = 5
 kfold = KFold(n_splits, random_state=0, shuffle=True)
@@ -31,7 +32,7 @@ print(f"- Number of samples: {len(data_df):,d}")
 print(f"- Verbose: {(verbose := args.verbose)}")
 print(f"- Joggle: {(joggle := args.joggle)}")
 
-csv_name = os.path.splitext(args.csv_path)[0].split(os.sep)[-1]
+csv_name = os.path.splitext(args.data_path)[0].split(os.sep)[-1]
 default_dir = f"{ROOT}/runs/cgcnn/{task}"
 default_dir += f"/{csv_name}-{n_splits}folds-{epochs}epochs-{batch_size}batch"
 print(f"- Output directory: {(out_dir := args.out_dir or default_dir)}\n")
@@ -46,6 +47,7 @@ if task == "classification":
     print(f"dummy accuracy: {targets.mean():.3f}")
 else:  # regression
     print(f"dummy MAE: {(targets - targets.mean()).abs().mean():.3f}")
+
 
 # %%
 for fold, (train_idx, test_idx) in enumerate(kfold.split(data_df), 1):

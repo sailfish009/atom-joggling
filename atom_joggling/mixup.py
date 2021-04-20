@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from tqdm import trange
 
-from supercon.utils import ROOT, mean, parser
+from atom_joggling.utils import ROOT, mean, parser
+
 
 # Method specific options
 

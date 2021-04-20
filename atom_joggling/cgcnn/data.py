@@ -1,19 +1,19 @@
 import json
 from functools import lru_cache
 from os.path import exists
-from typing import Iterable, Tuple
+from typing import Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
-from pymatgen import Structure
+from pymatgen.core import Structure
 from torch import LongTensor, Tensor
 from torch.utils.data import Dataset
 
-from supercon.utils import ROOT
+from atom_joggling.utils import ROOT
 
 
-class CrystalGraphData(Dataset):
+class OldCrystalGraphData(Dataset):
     """Dataset wrapper for crystal structure data in CIF format."""
 
     def __init__(
@@ -22,11 +22,11 @@ class CrystalGraphData(Dataset):
         task: str,
         fea_path: str = f"{ROOT}/data/cgcnn-embedding.json",
         struct_path: str = f"{ROOT}/data/structures",
-        max_num_nbr: int = 12,
+        max_num_nbr: int = 5,
         radius: int = 5,
         dmin: int = 0,
         step: float = 0.2,
-        joggle: int = 0,
+        joggle: float = 0,
     ) -> None:
         """
         Args:
@@ -46,8 +46,8 @@ class CrystalGraphData(Dataset):
                 positions in a crystal. May improve model robustness. Defaults to 0.
         """
 
-        assert exists(fea_path), f"fea_path='{fea_path}' does not exist!"
-        assert exists(struct_path), f"struct_path='{struct_path}' does not exist!"
+        assert exists(fea_path), f"{fea_path=} does not exist!"
+        assert exists(struct_path), f"{struct_path=} does not exist!"
 
         self.df = df
         self.struct_path = struct_path
@@ -61,8 +61,6 @@ class CrystalGraphData(Dataset):
         self.nbr_fea_len = self.gdf.embedding_size
 
         self.task = task
-        targets = df.iloc[:, 2]
-        self.n_targets = targets.max() + 1 if task == "classification" else 1
         self.joggle = joggle
 
     def __len__(self) -> int:
@@ -120,14 +118,117 @@ class CrystalGraphData(Dataset):
         return features, target, composition, material_id
 
 
+class CrystalGraphData(Dataset):
+    """Dataset wrapper for crystal structure data in CIF format."""
+
+    def __init__(
+        self,
+        task: str,
+        df: pd.DataFrame,
+        targets: List[str],
+        struct_col: str = "structure",
+        identifiers=["material_id", "composition"],
+        fea_path: str = f"{ROOT}/data/cgcnn-embedding.json",
+        max_num_nbr: int = 12,
+        radius: int = 5,
+        dmin: int = 0,
+        step: float = 0.2,
+        joggle: float = 0,
+    ) -> None:
+        """
+        Args:
+            df (pd.DataFrame): Dataframe expected to have the following
+                columns: [material_id, composition, targets]
+            fea_path (str): The path to the element embedding
+            task (str): "regression" or "classification"
+            max_num_nbr (int, optional): The maximum number of neighbors while
+                constructing the crystal graph. Defaults to 12.
+            radius (int, optional): The cutoff radius for searching neighbors.
+                Defaults to 8.
+            dmin (int, optional): The minimum distance for constructing
+                GaussianDistance. Defaults to 0.
+            step (float, optional): The step size for constructing GaussianDistance.
+                Defaults to 0.2.
+            joggle (int, optional): By how many Angstroms to randomly perturb the atom
+                positions in a crystal. May improve model robustness. Defaults to 0.
+        """
+
+        assert exists(fea_path), f"{fea_path=} does not exist!"
+
+        self.df = df
+        self.ari = GraphFeaturizer.from_json(fea_path)
+        self.elem_emb_len = self.ari.embedding_size
+
+        self.max_num_nbr = max_num_nbr
+        self.radius = radius
+
+        self.gdf = GaussianDistance(dmin=dmin, dmax=radius, step=step)
+        self.nbr_fea_len = self.gdf.embedding_size
+
+        self.task = task
+        self.struct_col = struct_col
+        self.targets = targets
+        self.identifiers = identifiers
+
+        self.joggle = joggle
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> Tuple[tuple, Tensor, str, str]:
+        """
+        Returns:
+            features (tuple):
+            - atom_fea: Tensor(n_i, atom_fea_len)
+            - nbr_fea: Tensor(n_i, M, nbr_fea_len)
+            - atom_indices: LongTensor(n_i, M)
+            - neighbor_fea_idx: LongTensor(n_i, M)
+            target: Tensor(1)
+            composition: str
+            material_id: str
+        """
+        series = self.df.iloc[idx]
+        crystal = series[self.struct_col]
+        targets = series[self.targets]
+
+        # https://pymatgen.org/pymatgen.core.structure.html#pymatgen.core.structure.IStructure.get_neighbor_list
+        # get_neighbor_list returns: center_indices, points_indices, offset_vectors, distances
+        atom_idxs, neighbor_idxs, _, nbr_distances = crystal.get_neighbor_list(
+            self.radius
+        )
+
+        if self.joggle:
+            crystal.perturb(self.joggle)
+
+        nbr_distances = self.gdf.expand(nbr_distances)
+
+        # atom features
+        atom_fea = [atom.specie.symbol for atom in crystal]
+        atom_fea = np.vstack([self.ari.get_fea(atom) for atom in atom_fea])
+
+        atom_fea = Tensor(atom_fea)
+        nbr_distances = Tensor(nbr_distances)
+        atom_idxs = LongTensor(atom_idxs)
+        neighbor_idxs = LongTensor(neighbor_idxs)
+
+        if self.task == "regression":
+            target = Tensor([float(targets)])
+        elif self.task == "classification":
+            target = LongTensor([targets])
+
+        features = (atom_fea, nbr_distances, atom_idxs, neighbor_idxs)
+
+        return features, target, *series[self.identifiers]
+
+
 @lru_cache(maxsize=None)  # Cache loaded structures
 def load_struct(filepath: str) -> Structure:
-    """ Load a Pymatgen structure (in CIF format) from disk. """
+    """Load a Pymatgen structure (in CIF format) from disk."""
     return Structure.from_file(filepath)
 
 
 class GaussianDistance:
-    """ Expands distances by a Gaussian basis. (unit: angstrom) """
+    """Expands distances by a Gaussian basis. (unit: angstrom)"""
 
     def __init__(
         self, dmin: float, dmax: float, step: float, var: float = None
@@ -187,7 +288,7 @@ def collate_batch(batch: list, use_cuda: bool = False) -> tuple:
     """
     batch_atom_indices, batch_neighbor_indices, crystal_atom_idx = [], [], []
     base_idx = 0
-    features, targets, compositions, material_ids = zip(*batch)
+    features, targets, *rest = zip(*batch)
 
     atom_feas, nbr_feas, atom_indices, neighbor_indices = zip(*features)
     for idx, atom_fea in enumerate(atom_feas):
@@ -213,7 +314,7 @@ def collate_batch(batch: list, use_cuda: bool = False) -> tuple:
         out_features = [tensor.cuda() for tensor in out_features]
         targets = targets.cuda()
 
-    return out_features, targets, compositions, material_ids
+    return out_features, targets, *rest
 
 
 class GraphFeaturizer:
